@@ -25,7 +25,7 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | M ou 🔊 | couper le son |
 
 Un arbitre très sérieux annonce à voix haute chaque mort, le début et la fin des parties (synthèse vocale du navigateur),
-et un annonceur à la Unreal Tournament, d'une autre voix, grave et traînante, crie les exploits :
+et un annonceur à la Unreal Tournament, voix grave et caverneuse avec de l'écho (enregistrée dans `sounds/`), crie les exploits :
 « Premier sang ! », « En pleine tête ! » (« Chasseur de têtes ! » à la 3e décapitation), puis « Doublé ! », « Triplé ! », « Série meurtrière ! »…
 jusqu'à « Appelez une ambulance ! » (les frags de bonus s'affichent mais ne sont pas dits). Chaque victime d'affilée sans mourir rapporte 1 frag de plus
 (3 au plus), faire tomber le premier, qui porte une couronne, 2 frags de plus (« Détrôné ! »), chaque rebond du disque avant la touche 1 frag de plus
@@ -64,7 +64,9 @@ Pas de bots par défaut ; pour s'entraîner seul : `?bots=3` (jusqu'à 7).
 
 - `src/rules.js` : les règles (mouvement, tremplins, murs, disques, collisions), sans Three.js.
 - `src/main.js` : le rendu, les bots, le joueur, le gore, les parties et le HUD.
-- `test/rules.test.js` : `npm test` (node --test).
+- `test/` : `npm test` (node --test).
+- `sounds/` : les cris de l'annonceur, enregistrés par `node scripts/make-cries.mjs` (macOS : `say`, voix Thomas, et ffmpeg) ;
+  un cri ajouté à `CRIES` (`src/pseudos.js`) demande de relancer le script.
 
 ## Multijoueur
 

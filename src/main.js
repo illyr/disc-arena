@@ -5,7 +5,7 @@ import {
   chest, hitZone, thickness, knock, newBody, newDisc, platformUnder, steer, stepBody, stepDisc,
 } from "./rules.js";
 import { hostRoom, joinRoom, newRoomCode } from "./net.js";
-import { DECAP_LINES, DRAWN_SHOUTS, FALL_LINES, PSEUDOS, PUSH_LINES, STREAK_SHOUTS } from "./pseudos.js";
+import { crySlug, DECAP_LINES, FALL_LINES, PSEUDOS, PUSH_LINES, STREAK_SHOUTS } from "./pseudos.js";
 
 const NAMES = ["Joueur 1", "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"];
 // Every slot looks like no other: its colour, the pattern on its body, and its oddities
@@ -995,9 +995,8 @@ function banner(text) {
   $("banner").textContent = text;
 }
 // The referee reads the events aloud on each player's machine, deadly serious: a deep, slow French voice.
-// The exploits, another voice shouts them, drawn out, like the announcer of Unreal Tournament.
+// The exploits, an announcer shouts them, booming, like the one of Unreal Tournament.
 let refereeVoice = null;
-let announcerVoice = null;
 let muted = false;
 let crowd = null; // the crowd's AudioContext, made at its first roar
 try {
@@ -1021,23 +1020,29 @@ addEventListener("keydown", (ev) => {
 function pickVoice() {
   const french = speechSynthesis.getVoices().filter((v) => v.lang.startsWith("fr"));
   refereeVoice = french.find((v) => /thomas|daniel|henri|paul|nicolas|male/i.test(v.name)) ?? french[0] ?? null;
-  announcerVoice = ["jacques", "rocko", "grandpa"].map((n) => french.find((v) => v.name.toLowerCase().startsWith(n))).find(Boolean)
-    ?? french.find((v) => v !== refereeVoice) ?? refereeVoice;
 }
 if (window.speechSynthesis) {
   speechSynthesis.addEventListener("voiceschanged", pickVoice);
   pickVoice();
 }
-function say(text, voice, pitch, rate) {
-  const words = new SpeechSynthesisUtterance(text);
-  Object.assign(words, { lang: "fr-FR", voice, pitch, rate });
-  speechSynthesis.speak(words);
-}
-// shout: the exploits as shown ("Doublé ! +1 Détrôné ! +2"); their points are not said.
+let speaking = null; // the referee's line being read: kept, or Chrome may drop it before its end event
+// shout: the exploits as shown ("Doublé ! +1 Détrôné ! +2"); their points are not said, the cries come after the line.
 function announce(text, shout = "") {
-  if (muted || !window.speechSynthesis || speechSynthesis.pending) return; // one event waiting at most: the match goes on
-  if (text) say(text, refereeVoice, 0.5, 1.15);
-  for (const cry of shout.match(/[^!+\d ][^!]*!/g) ?? []) say(DRAWN_SHOUTS[cry] ?? cry, announcerVoice, 0.1, 0.6);
+  const cries = shout.match(/[^!+\d ][^!]*!/g) ?? [];
+  if (muted) return;
+  if (!text || !window.speechSynthesis) return cry(cries);
+  if (speechSynthesis.pending) return; // one event waiting at most: the match goes on
+  speaking = new SpeechSynthesisUtterance(text);
+  Object.assign(speaking, { lang: "fr-FR", voice: refereeVoice, pitch: 0.5, rate: 1.15 });
+  speaking.onend = speaking.onerror = () => cry(cries);
+  speechSynthesis.speak(speaking);
+}
+// The announcer's cries, one after the other: recorded in sounds/, since the browser's voice takes no echo.
+function cry([first, ...rest]) {
+  if (!first || muted) return;
+  const sound = new Audio(`sounds/${crySlug(first)}.mp3`);
+  sound.onended = sound.onerror = () => cry(rest);
+  sound.play().catch(() => cry(rest));
 }
 
 // The crowd at a decapitation, made up on the spot: hundreds of claps, and a chorus of voices

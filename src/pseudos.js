@@ -126,28 +126,9 @@ export const FALL_LINES = [
 // What the referee shouts for kills in a row without dying, by their count.
 export const STREAK_SHOUTS = ["", "", "Doublé !", "Triplé !", "Série meurtrière !", "Déchaîné !", "Inarrêtable !", "Monstrueux !", "Divin !",
   "Appelez une ambulance !"];
-// How the announcer says them: syllables hammered and drawn out, « MOOONSTER KILL ».
-export const DRAWN_SHOUTS = {
-  "Premier sang !": "Premier... sang !",
-  "Doublé !": "Dou... blé !",
-  "Triplé !": "Tri... plé !",
-  "Série meurtrière !": "Série... meur... trière !",
-  "Déchaîné !": "Dé... chaî... né !",
-  "Inarrêtable !": "In... arrê... table !",
-  "Monstrueux !": "Mon... mon... mons... trueux !",
-  "Divin !": "Di... vin !",
-  "Appelez une ambulance !": "Appelez... une... am... bu... lance !",
-  "En pleine tête !": "En pleine... tête !",
-  "Chasseur de têtes !": "Chasseur... de... têtes !",
-  "Brochette !": "Bro... chette !",
-  "Par la bande !": "Par... la... bande !",
-  "Détrôné !": "Dé... trô... né !",
-  "Remontada !": "Re... mon... tada !",
-  "Un frag pour la gloire !": "Un frag... pour la... gloire !",
-  "Et c'est le buuut !": "Et c'est le... buuuuut !",
-  "Humiliation !": "Hu... mi... li... ation !",
-  "Tu as pris la tête !": "Tu as pris... la... tête !",
-  "Tu as perdu la tête !": "Tu as perdu... la... tête !",
-  "Fraggez !": "Fra... ggez !",
-  "Sans une égratignure !": "Sans une... é... gra... ti... gnure !",
-};
+// Every cry of the announcer, each recorded once in sounds/ by scripts/make-cries.mjs.
+export const CRIES = [...STREAK_SHOUTS.filter(Boolean), "Premier sang !", "En pleine tête !", "Chasseur de têtes !", "Brochette !",
+  "Par la bande !", "Détrôné !", "Remontada !", "Un frag pour la gloire !", "Et c'est le buuut !", "Humiliation !",
+  "Tu as pris la tête !", "Tu as perdu la tête !", "Fraggez !", "Sans une égratignure !"];
+// A cry's file name: « Et c'est le buuut ! » → et-c-est-le-buuut.
+export const crySlug = (cry) => cry.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
