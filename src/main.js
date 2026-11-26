@@ -210,6 +210,32 @@ const entities = NAMES.map((name, i) => ({
   score: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, ...makeAvatar(LOOKS[i]),
 }));
 entities.forEach((e) => (e.group.visible = !e.empty));
+
+// A picture of each player for the lobby, taken once: the looks never change.
+function takePortraits() {
+  const studio = new THREE.Scene();
+  studio.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2));
+  const light = new THREE.DirectionalLight(0xffffff, 1.5);
+  light.position.set(3, 6, -6);
+  studio.add(light);
+  const lens = new THREE.PerspectiveCamera(32, 96 / 120, 0.1, 50);
+  lens.position.set(2.6, 3, -6.4);
+  lens.lookAt(0, 2.3, 0);
+  const film = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  film.setPixelRatio(2);
+  film.setSize(96, 120);
+  for (const e of entities) {
+    const model = e.group.clone();
+    model.visible = true;
+    studio.add(model);
+    film.render(studio, lens);
+    e.portrait = film.domElement.toDataURL();
+    studio.remove(model);
+  }
+  film.dispose();
+  film.forceContextLoss();
+}
+takePortraits();
 let me = entities[0]; // a guest learns its slot from the host's first state
 const pickPseudo = () => {
   const free = PSEUDOS.filter((p) => !entities.some((o) => !o.empty && o.name === p));
@@ -641,12 +667,18 @@ function renderScores() {
 function renderLobby() {
   $("lobby-title").textContent = inMatch ? "Partie en cours" : "Salle d'attente";
   $("players").replaceChildren(...entities.filter((o) => !o.empty).map((o) => {
-    const row = document.createElement("tr");
-    for (const text of ["●", o === me ? `${o.name} (toi)` : o.name, o === entities[0] ? "hôte" : o.bot ? "bot" : "", o.score]) {
-      row.insertCell().textContent = text;
-    }
-    row.cells[0].style.color = `#${o.color.toString(16).padStart(6, "0")}`;
-    return row;
+    const card = document.createElement("div");
+    card.className = o === me ? "card me" : "card";
+    const portrait = new Image();
+    portrait.src = o.portrait;
+    portrait.alt = "";
+    const name = document.createElement("div");
+    name.textContent = o === me ? `${o.name} (toi)` : o.name;
+    name.style.color = `#${o.color.toString(16).padStart(6, "0")}`;
+    const info = document.createElement("div");
+    info.textContent = [o === entities[0] ? "hôte" : o.bot ? "bot" : "", `${o.score} pts`].filter(Boolean).join(" · ");
+    card.append(portrait, name, info);
+    return card;
   }));
   if (document.activeElement !== $("pseudo")) $("pseudo").value = me.name;
   $("launch").hidden = !!joining || inMatch;

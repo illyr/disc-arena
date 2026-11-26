@@ -12,16 +12,18 @@
     #scores { position: fixed; right: 20px; top: 16px; text-align: right; line-height: 1.5; }
     #feed { position: fixed; left: 20px; top: 16px; line-height: 1.5; }
     #banner { position: fixed; top: 30%; width: 100%; text-align: center; font-size: 36px; color: #ff1744; text-shadow: 0 0 12px #000; }
-    #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #07060fcc; cursor: pointer; text-align: center; }
+    #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center; overflow-y: auto; background: #07060fcc; cursor: pointer; text-align: center; }
     #start h1 { font-size: 56px; margin: 0 0 12px; }
+    #start p { margin: 4px 0; }
     #lobby { margin-top: 16px; padding: 16px 24px; border-radius: 8px; background: #ffffff10; cursor: default; }
     #lobby h2 { margin: 0 0 8px; }
-    #lobby table { margin: 0 auto 12px; border-collapse: collapse; font-size: 18px; }
-    #lobby td { padding: 4px 12px; text-align: left; }
-    #lobby td:last-child { text-align: right; }
+    #players { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 600px; margin: 0 auto 12px; }
+    .card { width: 124px; padding: 6px; border: 2px solid transparent; border-radius: 8px; background: #ffffff14; font-size: 14px; overflow-wrap: break-word; }
+    .card.me { border-color: #fff; }
+    .card img { display: block; width: 96px; height: 120px; margin: 0 auto 4px; }
     #lobby input { width: 24em; max-width: 70vw; padding: 6px; font-size: 16px; }
     #launch { margin-top: 12px; padding: 12px 28px; font-size: 22px; border: 0; border-radius: 8px; background: #76ff03; color: #07060f; cursor: pointer; }
-    #room { position: fixed; right: 20px; bottom: 16px; z-index: 1; max-width: 60%; text-align: right; user-select: text; }
+    #room { position: fixed; right: 20px; bottom: 16px; z-index: 1; max-width: 28%; text-align: right; user-select: text; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script type="importmap">
@@ -44,7 +46,7 @@
     <p>Décapitation : 5 points · Éjection dans le vide : 1 point · Premier à 20 points</p>
     <div id="lobby">
       <h2 id="lobby-title"></h2>
-      <table><tbody id="players"></tbody></table>
+      <div id="players"></div>
       <label>Ton pseudo : <input id="pseudo" maxlength="60"></label>
     </div>
     <button id="launch" hidden>Lancer la partie</button>
