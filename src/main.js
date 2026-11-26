@@ -9,7 +9,7 @@ const NAMES = ["Joueur 1", "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtro
 const COLORS = [0x4fc3f7, 0xff7043, 0x9ccc65, 0xba68c8, 0xffee58, 0x26a69a, 0xf06292, 0xbdbdbd];
 const POINTS = { decap: 5, fall: 1 }; // a fall nobody pushed scores nothing
 const WIN_SCORE = 20;
-const MATCH_PAUSE = 6; // seconds the winner stays on screen before the next match
+const MATCH_PAUSE = 6; // seconds the winner stays on screen before the lobby
 const RESPAWN_DELAY = 2.5;
 const DECAP_RESPAWN_DELAY = 5; // long enough to watch the geyser
 const BLAME_WINDOW = 6; // seconds a push still counts as the kill of whoever threw it
@@ -108,7 +108,8 @@ const entities = NAMES.map((name, i) => ({
 }));
 entities.forEach((e) => (e.group.visible = !e.empty));
 let me = entities[0]; // a guest learns its slot from the host's first state
-let winner = null; // the host's winner of the match, until the next one starts
+let inMatch = false; // false: the lobby, where the players warm up and score nothing until the host launches
+let winner = null; // the host's winner of the match, until the lobby
 let nextMatchAt = 0;
 let winnerText = "";
 const discs = [];
@@ -210,21 +211,33 @@ function kill(e, killer, how, dir) {
   e.alive = false;
   e.respawnAt = now + (how === "decap" ? DECAP_RESPAWN_DELAY : RESPAWN_DELAY);
   discs.filter((d) => d.owner === e).forEach(removeDisc);
-  if (killer && !winner) killer.score += POINTS[how];
+  const scores = killer && inMatch && !winner;
+  if (scores) killer.score += POINTS[how];
   Object.assign(e, { how, killer, dir: { x: dir?.x ?? 0, z: dir?.z ?? 0 } });
   showDeath(e, killer, how, e.dir);
-  if (killer && !winner && killer.score >= WIN_SCORE) {
+  if (scores && killer.score >= WIN_SCORE) {
     winner = killer;
     nextMatchAt = now + MATCH_PAUSE;
     showWinner(winner);
   }
 }
 
-function newMatch() {
-  winner = null;
-  showWinner(null);
+function launchMatch() {
   [...discs].forEach(removeDisc);
   for (const e of entities) if (!e.empty) spawn(Object.assign(e, { score: 0 }));
+  setMatch(true);
+}
+
+function toLobby() {
+  winner = null;
+  showWinner(null);
+  setMatch(false);
+}
+
+function setMatch(on) {
+  inMatch = on;
+  if (on) feed("La partie commence !");
+  renderScores();
 }
 
 const winText = (e) => e ? `${e.name} a gagné la partie !` : "";
@@ -460,6 +473,7 @@ addEventListener("mousedown", (ev) => {
   else myThrows++;
 });
 addEventListener("contextmenu", (ev) => ev.preventDefault());
+$("launch").addEventListener("click", launchMatch); // the click goes on to the start screen, which starts playing
 
 function playerInput() {
   // KeyboardEvent.code names the key by its place: KeyW is Z on an AZERTY keyboard.
@@ -498,8 +512,11 @@ function feed(text) {
 function renderScores() {
   $("scores").innerHTML = "";
   const title = document.createElement("div");
-  title.textContent = `Premier à ${WIN_SCORE} points`;
+  title.textContent = inMatch ? `Premier à ${WIN_SCORE} points`
+    : joining ? "Salle d'attente : l'hôte va lancer la partie" : "Salle d'attente : Échap, puis « Lancer la partie »";
   $("scores").append(title);
+  $("lobby").textContent = inMatch ? "" : `Salle d'attente : ${entities.filter((o) => !o.empty).map((o) => o.name).join(", ")}`;
+  $("launch").hidden = !!joining || inMatch;
   for (const e of entities.filter((o) => !o.empty).sort((a, b) => b.score - a.score)) {
     const line = document.createElement("div");
     line.textContent = `${e === me ? "▶ " : ""}${e.name}  ${e.score}`;
@@ -525,6 +542,7 @@ function hostState() {
     }),
     discs: discs.map((d) => [d.pos.x, d.pos.y, d.pos.z, d.decap ? 1 : 0, entities.indexOf(d.owner)]),
     winner: entities.indexOf(winner),
+    match: inMatch,
   };
 }
 
@@ -588,6 +606,7 @@ function guestHears(s) {
       showDeath(e, entities[n.killer] ?? null, n.how, { x: n.dx, z: n.dz });
     }
   });
+  if (s.match !== inMatch) setMatch(s.match);
   const won = entities[s.winner];
   if (winText(won) !== winnerText) showWinner(won);
   const key = s.ents.map((n) => n && n.name + n.score).join();
@@ -619,7 +638,7 @@ function showDiscs(list) {
 }
 
 function hostFrame(dt) {
-  if (winner && now > nextMatchAt) newMatch();
+  if (winner && now > nextMatchAt) toLobby();
   for (const e of entities) {
     if (e.empty) continue;
     if (e.alive) {
