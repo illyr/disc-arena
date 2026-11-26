@@ -21,10 +21,12 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | Clic gauche | disque : pousse la cible, rebondit 3 fois puis revient |
 | Clic droit | décapiteur : prend les 3 disques, tue d'un coup |
 | Tremplin vert | propulse vers une autre plateforme |
+| Mur à liseré rose | abri : arrête les joueurs et renvoie les disques lancés à plat ; on saute par-dessus, et un disque lancé en sautant passe au-dessus |
 | M ou 🔊 | couper le son |
 
 Un arbitre très sérieux annonce à voix haute chaque mort, le début et la fin des parties (synthèse vocale du navigateur),
-et les exploits : premier sang, doublé, triplé, massacre… Chaque victime d'affilée sans mourir rapporte 1 point de plus
+et un annonceur à la Unreal Tournament, d'une autre voix, grave et traînante, crie les exploits :
+premier sang, doublé, triplé, massacre… (les points de bonus s'affichent mais ne sont pas dits). Chaque victime d'affilée sans mourir rapporte 1 point de plus
 (3 au plus), faire tomber le meneur, qui porte une couronne, 2 points de plus.
 
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
@@ -39,7 +41,7 @@ Pas de bots par défaut ; pour s'entraîner seul : `?bots=3` (jusqu'à 7).
 
 ## Code
 
-- `src/rules.js` : les règles (mouvement, pads, disques, collisions), sans Three.js.
+- `src/rules.js` : les règles (mouvement, tremplins, murs, disques, collisions), sans Three.js.
 - `src/main.js` : le rendu, les bots, le joueur, le gore, les parties et le HUD.
 - `test/rules.test.js` : `npm test` (node --test).
 

@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import {
   ARENA_RADIUS, CHEST, DISC_SPEED, FALL_DEATH_Y, GRAVITY, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
+  WALLS, WALL_HEIGHT, WALL_THICKNESS,
   chest, hitZone, knock, newBody, newDisc, platformUnder, stepBody, stepDisc,
 } from "./rules.js";
 import { hostRoom, joinRoom, newRoomCode } from "./net.js";
-import { DECAP_LINES, FALL_LINES, PSEUDOS, PUSH_LINES, STREAK_SHOUTS } from "./pseudos.js";
+import { DECAP_LINES, DRAWN_SHOUTS, FALL_LINES, PSEUDOS, PUSH_LINES, STREAK_SHOUTS } from "./pseudos.js";
 
 const NAMES = ["Joueur 1", "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"];
 // Every slot looks like no other: its colour, the pattern on its body, and its oddities
@@ -80,6 +81,18 @@ const pads = PADS.map((p) => {
   scene.add(pad);
   return pad;
 });
+// The cover, chest high, with a glowing top to see it from afar.
+for (const w of WALLS) {
+  const cover = new THREE.Group();
+  const block = new THREE.Mesh(new THREE.BoxGeometry(w.half * 2, WALL_HEIGHT, WALL_THICKNESS), new THREE.MeshStandardMaterial({ color: 0x8a93a8 }));
+  block.position.y = WALL_HEIGHT / 2;
+  const top = new THREE.Mesh(new THREE.BoxGeometry(w.half * 2, 0.06, WALL_THICKNESS + 0.04), glow(0xff4081));
+  top.position.y = WALL_HEIGHT;
+  cover.add(block, top);
+  cover.position.set(w.x, 0, w.z);
+  cover.rotation.y = Math.atan2(-w.az, w.ax);
+  scene.add(cover);
+}
 const wall = new THREE.Mesh(
   new THREE.CylinderGeometry(ARENA_RADIUS, ARENA_RADIUS, 6, 64, 1, true),
   new THREE.MeshBasicMaterial({ color: 0x7c4dff, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false }),
@@ -686,7 +699,9 @@ function banner(text) {
   $("banner").textContent = text;
 }
 // The referee reads the events aloud on each player's machine, deadly serious: a deep, slow French voice.
+// The exploits, another voice shouts them, drawn out, like the announcer of Unreal Tournament.
 let refereeVoice = null;
+let announcerVoice = null;
 let muted = false;
 try {
   muted = localStorage.getItem("muted") === "1";
@@ -708,16 +723,23 @@ addEventListener("keydown", (ev) => {
 function pickVoice() {
   const french = speechSynthesis.getVoices().filter((v) => v.lang.startsWith("fr"));
   refereeVoice = french.find((v) => /thomas|daniel|henri|paul|nicolas|male/i.test(v.name)) ?? french[0] ?? null;
+  announcerVoice = ["jacques", "rocko", "grandpa"].map((n) => french.find((v) => v.name.toLowerCase().startsWith(n))).find(Boolean)
+    ?? french.find((v) => v !== refereeVoice) ?? refereeVoice;
 }
 if (window.speechSynthesis) {
   speechSynthesis.addEventListener("voiceschanged", pickVoice);
   pickVoice();
 }
-function announce(text) {
-  if (muted || !window.speechSynthesis || speechSynthesis.pending) return; // one line waiting at most: the match goes on
+function say(text, voice, pitch, rate) {
   const words = new SpeechSynthesisUtterance(text);
-  Object.assign(words, { lang: "fr-FR", voice: refereeVoice, pitch: 0.5, rate: 1.15 });
+  Object.assign(words, { lang: "fr-FR", voice, pitch, rate });
   speechSynthesis.speak(words);
+}
+// shout: the exploits as shown ("Doublé ! +1 Régicide ! +2"); their points are not said.
+function announce(text, shout = "") {
+  if (muted || !window.speechSynthesis || speechSynthesis.pending) return; // one event waiting at most: the match goes on
+  say(text, refereeVoice, 0.5, 1.15);
+  for (const cry of shout.match(/[^!+\d ][^!]*!/g) ?? []) say(DRAWN_SHOUTS[cry] ?? cry, announcerVoice, 0.1, 0.6);
 }
 
 // A line in the top-left corner; an event names its players, {K} and {V}, in their colours.
@@ -734,7 +756,7 @@ function feed(text, players = {}, shout = "") {
     name.style.color = css(who.color);
     line.append(name);
   }
-  const said = shout ? `${line.textContent}. ${shout}` : line.textContent;
+  const said = line.textContent;
   if (shout) {
     const loud = document.createElement("span");
     loud.className = "shout";
@@ -743,7 +765,7 @@ function feed(text, players = {}, shout = "") {
   }
   if (Object.keys(players).length) {
     line.className = "event";
-    announce(said);
+    announce(said, shout);
   }
   $("feed").append(line);
   while ($("feed").children.length > 4) $("feed").firstChild.remove();

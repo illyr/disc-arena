@@ -18,6 +18,11 @@ export const DISC_LIFE = 3; // seconds before a disc flies home
 export const MAX_DISCS = 3;
 export const PAD_RADIUS = 0.9;
 export const PAD_FLIGHT = 1.1;
+export const BODY_RADIUS = 0.5;
+export const DISC_RADIUS = 0.32;
+// Cover: chest high, so that a flat disc bounces off it while one thrown from a jump flies over.
+export const WALL_HEIGHT = 2;
+export const WALL_THICKNESS = 0.4;
 
 const RING = [[13, 0], [-13, 0], [0, 13], [0, -13]];
 export const PLATFORMS = [{ x: 0, z: 0, r: 5 }, ...RING.map(([x, z]) => ({ x, z, r: 4 }))];
@@ -26,6 +31,43 @@ export const PADS = RING.flatMap(([x, z], i) => [
   { x: x * 0.27, z: z * 0.27, to: i + 1 },
   { x: x * 0.8, z: z * 0.8, to: 0 },
 ]);
+
+// Each wall: its middle, the unit direction it runs along, half its length. On the center platform they
+// stand on the diagonals, on the outer ones beside the axis: off the flights of the pads.
+const DIAGONAL = Math.SQRT1_2;
+export const WALLS = [
+  ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([sx, sz]) => ({
+    x: sx * 2.6 * DIAGONAL, z: sz * 2.6 * DIAGONAL, ax: -sz * DIAGONAL, az: sx * DIAGONAL, half: 1,
+  })),
+  ...RING.flatMap(([x, z]) => {
+    const ux = Math.sign(x), uz = Math.sign(z); // toward the outside
+    return [-1, 1].map((side) => ({ x: x - ux * 0.8 - uz * side * 2, z: z - uz * 0.8 + ux * side * 2, ax: uz, az: ux, half: 0.8 }));
+  }),
+];
+
+// Where p stands from wall w: along it (u) and across it (v).
+const wallLocal = (p, w) => {
+  const dx = p.x - w.x, dz = p.z - w.z;
+  return { u: dx * w.ax + dz * w.az, v: dz * w.ax - dx * w.az };
+};
+
+// Keeps a body out of the walls it stands below the top of.
+function blockBody(b) {
+  if (b.pos.y >= WALL_HEIGHT) return;
+  const reach = WALL_THICKNESS / 2 + BODY_RADIUS;
+  for (const w of WALLS) {
+    const { u, v } = wallLocal(b.pos, w);
+    const along = Math.max(-w.half, Math.min(w.half, u));
+    const cx = w.x + w.ax * along, cz = w.z + w.az * along;
+    const dx = b.pos.x - cx, dz = b.pos.z - cz;
+    const dist = Math.hypot(dx, dz);
+    if (dist >= reach) continue;
+    // Right on the line: out by the side it is on.
+    const nx = dist ? dx / dist : -w.az * Math.sign(v || 1), nz = dist ? dz / dist : w.ax * Math.sign(v || 1);
+    b.pos.x = cx + nx * reach;
+    b.pos.z = cz + nz * reach;
+  }
+}
 
 export const platformUnder = (p) => PLATFORMS.find((pl) => Math.hypot(p.x - pl.x, p.z - pl.z) < pl.r);
 export const chest = (b) => ({ x: b.pos.x, y: b.pos.y + CHEST, z: b.pos.z });
@@ -48,6 +90,7 @@ export function stepBody(b, wish, jump, dt) {
   b.pos.x += (b.vel.x + b.push.x) * dt;
   b.pos.y += b.vel.y * dt;
   b.pos.z += (b.vel.z + b.push.z) * dt;
+  blockBody(b);
   // Under the top by less than a meter: landed. Deeper, it went past the edge and keeps falling.
   b.onGround = b.vel.y <= 0 && b.pos.y <= 0 && b.pos.y > -1 && !!platformUnder(b.pos);
   if (b.onGround) {
@@ -112,6 +155,27 @@ export function stepDisc(d, home, dt) {
     d.pos.x = nx * ARENA_RADIUS;
     d.pos.z = nz * ARENA_RADIUS;
     if (--d.bounces < 0) d.returning = true;
+  }
+  if (!d.returning && d.pos.y < WALL_HEIGHT) bounceOffWalls(d);
+}
+
+// A disc that reaches a wall, or crossed it during the frame, bounces back to the side it came from.
+function bounceOffWalls(d) {
+  const reach = WALL_THICKNESS / 2 + DISC_RADIUS;
+  for (const w of WALLS) {
+    const a = wallLocal(d.prev, w), b = wallLocal(d.pos, w);
+    const crossed = Math.sign(a.v) !== Math.sign(b.v);
+    if (Math.abs(b.u) > w.half + DISC_RADIUS || (!crossed && Math.abs(b.v) >= reach)) continue;
+    const side = Math.sign(a.v) || 1;
+    const nx = -w.az * side, nz = w.ax * side; // the wall's normal, toward the side the disc came from
+    const dot = d.vel.x * nx + d.vel.z * nz;
+    if (dot >= 0) continue; // already leaving
+    d.vel.x -= 2 * dot * nx;
+    d.vel.z -= 2 * dot * nz;
+    d.pos.x = w.x + w.ax * b.u + nx * reach;
+    d.pos.z = w.z + w.az * b.u + nz * reach;
+    if (--d.bounces < 0) d.returning = true;
+    return;
   }
 }
 

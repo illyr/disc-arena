@@ -61,6 +61,22 @@ export const DECAP_LINES = [
   "{K} a offert à {V} une coupe très courte",
   "{V} se retrouve sans tête, signé {K}",
   "{K} a livré {V} en deux colis",
+  "{K} a rendu {V} plus léger d'une tête",
+  "{K} a mis {V} en pièces détachées",
+  "{V} a la tête ailleurs, littéralement, grâce à {K}",
+  "{K} a débouché {V} comme un vieux cidre",
+  "{K} a décoiffé {V}, la tête avec",
+  "{V} a gardé son corps, pas sa tête : {K} est passé",
+  "{K} a séparé {V} à l'amiable",
+  "{K} a cueilli {V} par la tête, comme une cerise",
+  "{K} a tranché {V} comme un saucisson",
+  "{V} cherche encore sa tête, {K} sait où elle est",
+  "{K} a ouvert {V} comme un bocal",
+  "{K} a transformé {V} en porte-manteau",
+  "{V} a perdu le fil, et le cou avec, contre {K}",
+  "{K} a envoyé {V} en vacances, la tête d'abord",
+  "{K} a fait à {V} une coupe au ras du cou",
+  "{V} est reparti en deux voyages, merci {K}",
 ];
 export const PUSH_LINES = [
   "{K} a jeté {V} dans le vide",
@@ -73,6 +89,18 @@ export const PUSH_LINES = [
   "{K} a raccompagné {V} vers la sortie",
   "{K} a fait découvrir la chute libre à {V}",
   "{V} est descendu prendre l'air, poussé par {K}",
+  "{K} a rangé {V} tout en bas",
+  "{K} a mis {V} à la cave",
+  "{V} a pris l'ascenseur, sans ascenseur, grâce à {K}",
+  "{K} a fait faire le grand saut à {V}",
+  "{K} a expédié {V} au rez-de-chaussée du néant",
+  "{V} a quitté la conversation, poussé par {K}",
+  "{K} a renvoyé {V} à l'expéditeur",
+  "{K} a rappelé à {V} que le vide existe",
+  "{V} est tombé de haut, poussé par {K}",
+  "{K} a mis {V} en apesanteur, sans le retour",
+  "{K} a fait goûter le vide à {V}",
+  "{V} visite les profondeurs, invité par {K}",
 ];
 export const FALL_LINES = [
   "{V} est tombé tout seul",
@@ -83,7 +111,26 @@ export const FALL_LINES = [
   "{V} a glissé, tout seul, devant tout le monde",
   "{V} a testé la gravité : elle fonctionne",
   "{V} est parti sans dire au revoir",
+  "{V} s'est éliminé sans l'aide de personne",
+  "{V} a pris un raccourci vers le bas",
+  "{V} a sauté, la plateforme non",
+  "{V} a cru savoir voler",
+  "{V} a mal calculé son coup",
+  "{V} a fait une sortie remarquée",
+  "{V} a perdu pied, puis tout le reste",
+  "{V} est allé chercher un disque tout en bas",
 ];
 
 // What the referee shouts for kills in a row without dying, by their count.
 export const STREAK_SHOUTS = ["", "", "Doublé !", "Triplé !", "Massacre !", "Carnage !", "Monstrueux !"];
+// How the announcer says them: syllables hammered and drawn out, « MOOONSTER KILL ».
+export const DRAWN_SHOUTS = {
+  "Premier sang !": "Premier... sang !",
+  "Doublé !": "Dou... blé !",
+  "Triplé !": "Tri... plé !",
+  "Massacre !": "Ma... ssa... cre !",
+  "Carnage !": "Car... nage !",
+  "Monstrueux !": "Mon... mon... mons... trueux !",
+  "Régicide !": "Ré... gi... cide !",
+  "Humiliation !": "Hu... mi... li... ation !",
+};
