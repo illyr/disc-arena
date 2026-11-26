@@ -4,6 +4,7 @@ import {
   chest, hitZone, knock, newBody, newDisc, platformUnder, stepBody, stepDisc,
 } from "./rules.js";
 import { hostRoom, joinRoom, newRoomCode } from "./net.js";
+import { PSEUDOS } from "./pseudos.js";
 
 const NAMES = ["Joueur 1", "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"];
 const COLORS = [0x4fc3f7, 0xff7043, 0x9ccc65, 0xba68c8, 0xffee58, 0x26a69a, 0xf06292, 0xbdbdbd];
@@ -24,6 +25,7 @@ const BOT_AIM_ERROR = 0.5;
 const BOT_LEAD = 0.5;
 const BOT_JUMP_SHOTS = 0.15;
 const BOT_DECAPS = 0.12;
+const NAME_MAX = 60;
 const STILL = { x: 0, z: 0 };
 const $ = (id) => document.getElementById(id);
 
@@ -108,6 +110,12 @@ const entities = NAMES.map((name, i) => ({
 }));
 entities.forEach((e) => (e.group.visible = !e.empty));
 let me = entities[0]; // a guest learns its slot from the host's first state
+const pickPseudo = () => {
+  const free = PSEUDOS.filter((p) => !entities.some((o) => !o.empty && o.name === p));
+  return free[Math.floor(Math.random() * free.length)];
+};
+const cleanName = (name) => (typeof name === "string" ? name.trim().slice(0, NAME_MAX) : "");
+if (!joining) me.name = pickPseudo();
 let inMatch = false; // false: the lobby, where the players warm up and score nothing until the host launches
 let winner = null; // the host's winner of the match, until the lobby
 let nextMatchAt = 0;
@@ -425,7 +433,7 @@ function think(e) {
 
 // The player.
 const keys = new Set();
-addEventListener("keydown", (ev) => keys.add(ev.code));
+addEventListener("keydown", (ev) => ev.target.tagName !== "INPUT" && keys.add(ev.code)); // not while typing a name
 addEventListener("keyup", (ev) => keys.delete(ev.code));
 // The pointer lock only keeps the cursor in the window: a browser may refuse it, and the mouse
 // must still aim and throw without it.
@@ -474,6 +482,16 @@ addEventListener("mousedown", (ev) => {
 });
 addEventListener("contextmenu", (ev) => ev.preventDefault());
 $("launch").addEventListener("click", launchMatch); // the click goes on to the start screen, which starts playing
+$("lobby").addEventListener("click", (ev) => ev.stopPropagation()); // renaming must not start playing
+// A guest's name goes to the host with its moves; the host's states bring it back to everyone.
+let myName = null;
+$("pseudo").addEventListener("input", (ev) => {
+  const name = cleanName(ev.target.value);
+  if (!name) return;
+  me.name = name;
+  if (joining) myName = name;
+  renderScores();
+});
 
 function playerInput() {
   // KeyboardEvent.code names the key by its place: KeyW is Z on an AZERTY keyboard.
@@ -515,7 +533,21 @@ function renderScores() {
   title.textContent = inMatch ? `Premier à ${WIN_SCORE} points`
     : joining ? "Salle d'attente : l'hôte va lancer la partie" : "Salle d'attente : Échap, puis « Lancer la partie »";
   $("scores").append(title);
-  $("lobby").textContent = inMatch ? "" : `Salle d'attente : ${entities.filter((o) => !o.empty).map((o) => o.name).join(", ")}`;
+  renderLobby();
+}
+
+// The table of the players on the start screen, and the field to rename oneself.
+function renderLobby() {
+  $("lobby-title").textContent = inMatch ? "Partie en cours" : "Salle d'attente";
+  $("players").replaceChildren(...entities.filter((o) => !o.empty).map((o) => {
+    const row = document.createElement("tr");
+    for (const text of ["●", o === me ? `${o.name} (toi)` : o.name, o === entities[0] ? "hôte" : o.bot ? "bot" : "", o.score]) {
+      row.insertCell().textContent = text;
+    }
+    row.cells[0].style.color = `#${o.color.toString(16).padStart(6, "0")}`;
+    return row;
+  }));
+  if (document.activeElement !== $("pseudo")) $("pseudo").value = me.name;
   $("launch").hidden = !!joining || inMatch;
   for (const e of entities.filter((o) => !o.empty).sort((a, b) => b.score - a.score)) {
     const line = document.createElement("div");
@@ -535,7 +567,7 @@ let host = null; // a guest's connection to the host
 function hostState() {
   return {
     ents: entities.map((e) => e.empty ? null : {
-      name: e.name, x: e.body.pos.x, y: e.body.pos.y, z: e.body.pos.z, yaw: e.yaw,
+      name: e.name, bot: e.bot, x: e.body.pos.x, y: e.body.pos.y, z: e.body.pos.z, yaw: e.yaw,
       alive: e.alive, life: e.life, discs: e.discs, score: e.score,
       knocks: e.knocks, kx: e.knockDir.x, kz: e.knockDir.z,
       how: e.how, killer: entities.indexOf(e.killer), dx: e.dir?.x ?? 0, dz: e.dir?.z ?? 0,
@@ -549,7 +581,7 @@ function hostState() {
 function guestJoins(conn) {
   const e = entities.find((o) => o.empty);
   if (!e) return conn.close(); // full
-  Object.assign(e, { empty: false, conn, name: `Joueur ${entities.indexOf(e) + 1}`, score: 0, throws: 0, decaps: 0 });
+  Object.assign(e, { empty: false, conn, name: pickPseudo(), score: 0, throws: 0, decaps: 0 });
   e.seenAt = performance.now();
   spawn(e);
   feed(`${e.name} a rejoint la partie`);
@@ -568,6 +600,11 @@ function guestSays(conn, msg) {
   if (!e) return;
   e.seenAt = performance.now();
   e.yaw = msg.yaw;
+  const name = cleanName(msg.name);
+  if (name && name !== e.name) {
+    e.name = name;
+    renderScores();
+  }
   // A guest still on its last life has not seen the respawn yet: where it says it is no longer holds.
   if (e.alive && msg.life === e.life) Object.assign(e.body.pos, { x: msg.x, y: msg.y, z: msg.z });
   for (; e.throws < msg.throws; e.throws++) throwDisc(e, false);
@@ -587,7 +624,7 @@ function guestHears(s) {
       if (!e.empty) vacate(e);
       return;
     }
-    Object.assign(e, { empty: false, name: n.name, score: n.score, discs: n.discs });
+    Object.assign(e, { empty: false, name: n.name, bot: n.bot, score: n.score, discs: n.discs });
     if (n.life !== e.life) {
       Object.assign(e, { life: n.life, alive: true, body: newBody(n), yaw: n.yaw, knocks: n.knocks });
       resetAvatar(e);
@@ -685,7 +722,7 @@ function guestFrame(dt) {
   netDiscs.forEach((mesh) => (mesh.rotation.y += 25 * dt));
   if (!host?.open || !me.body) return;
   const p = me.body.pos;
-  host.send({ life: me.life, x: p.x, y: p.y, z: p.z, yaw: me.yaw, throws: myThrows, decaps: myDecaps });
+  host.send({ life: me.life, x: p.x, y: p.y, z: p.z, yaw: me.yaw, throws: myThrows, decaps: myDecaps, name: myName });
 }
 
 if (joining) {

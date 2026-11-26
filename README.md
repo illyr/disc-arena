@@ -27,6 +27,7 @@ Une partie se joue en chacun pour soi : une décapitation vaut 5 points, éjecte
 (tomber sans avoir été poussé ne rapporte rien). Le premier à 20 points gagne.
 Avant chaque partie, une salle d'attente : on s'échauffe sans marquer, puis l'hôte clique « Lancer la partie »
 (Échap pour l'afficher) ; on y revient 6 s après chaque victoire.
+Chacun y arrive avec un pseudo tiré au hasard (`src/pseudos.js`) et peut le changer dans le champ « Ton pseudo ».
 Pas de bots par défaut ; pour s'entraîner seul : `?bots=3` (jusqu'à 7).
 
 ## Code

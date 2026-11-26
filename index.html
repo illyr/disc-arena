@@ -14,7 +14,12 @@
     #banner { position: fixed; top: 30%; width: 100%; text-align: center; font-size: 36px; color: #ff1744; text-shadow: 0 0 12px #000; }
     #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #07060fcc; cursor: pointer; text-align: center; }
     #start h1 { font-size: 56px; margin: 0 0 12px; }
-    #lobby { margin-top: 16px; font-size: 20px; }
+    #lobby { margin-top: 16px; padding: 16px 24px; border-radius: 8px; background: #ffffff10; cursor: default; }
+    #lobby h2 { margin: 0 0 8px; }
+    #lobby table { margin: 0 auto 12px; border-collapse: collapse; font-size: 18px; }
+    #lobby td { padding: 4px 12px; text-align: left; }
+    #lobby td:last-child { text-align: right; }
+    #lobby input { width: 24em; max-width: 70vw; padding: 6px; font-size: 16px; }
     #launch { margin-top: 12px; padding: 12px 28px; font-size: 22px; border: 0; border-radius: 8px; background: #76ff03; color: #07060f; cursor: pointer; }
     #room { position: fixed; right: 20px; bottom: 16px; z-index: 1; max-width: 60%; text-align: right; user-select: text; }
   </style>
@@ -37,7 +42,11 @@
     <p>Clic gauche : disque (pousse dans le vide) · Clic droit : décapiteur (les 3 disques)</p>
     <p>Les pads verts te propulsent vers une autre plateforme.</p>
     <p>Décapitation : 5 points · Éjection dans le vide : 1 point · Premier à 20 points</p>
-    <div id="lobby"></div>
+    <div id="lobby">
+      <h2 id="lobby-title"></h2>
+      <table><tbody id="players"></tbody></table>
+      <label>Ton pseudo : <input id="pseudo" maxlength="60"></label>
+    </div>
     <button id="launch" hidden>Lancer la partie</button>
   </div>
   <script type="module" src="src/main.js"></script>
