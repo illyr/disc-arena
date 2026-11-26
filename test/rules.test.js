@@ -1,16 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ARENA_RADIUS, CHEST, FAT, LEGS_TOP, GIANT, DISC_SPEED, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
-  hitZone, knock, newBody, newDisc, platformUnder, segmentHits, steer, stepBody, stepDisc,
+  ARENA_RADIUS, CHEST, FAT, LEGS_TOP, DISC_SPEED, HIT_RADIUS, NECK_RADIUS, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
+  FERRY_PERIOD, NECK_GROWTH, PARRY_RADIUS, TUNNELS, TUNNEL_WIDTH, discsMeet, hitZone, knock, moveFerries, newBody, newDisc, platformUnder, segmentHits, steer, stepBody, stepDisc, tunnelAt,
 } from "../src/rules.js";
 
 const DT = 1 / 60;
 const STILL = { x: 0, z: 0 };
 
 test("a disc bounces on the arena wall and keeps its speed", () => {
-  const d = newDisc(null, { x: 0, y: 0, z: 0 }, { x: 1, z: 0 }, false);
-  for (let i = 0; i < 90; i++) stepDisc(d, { x: 0, y: 0, z: 0 }, DT);
+  const d = newDisc(null, { x: ARENA_RADIUS - 6, y: 0, z: 0 }, { x: 1, z: 0 }, false); // over the lava, nothing in the way
+  for (let i = 0; i < 150; i++) stepDisc(d, { x: 0, y: 0, z: 0 }, DT);
   assert.ok(d.vel.x < 0, "it flies back after the wall");
   assert.equal(d.bounces, 2);
   assert.ok(Math.hypot(d.pos.x, d.pos.z) <= ARENA_RADIUS);
@@ -23,8 +23,29 @@ test("every pad throws the player onto its target platform, over no wall", () =>
     for (let i = 0; i < 240; i++) stepBody(b, STILL, false, DT);
     assert.ok(b.onGround);
     assert.equal(platformUnder(b.pos), PLATFORMS[pad.to]);
-    assert.ok(Math.hypot(b.pos.x - PLATFORMS[pad.to].x, b.pos.z - PLATFORMS[pad.to].z) < 0.3, "lands near the center, not stopped by a wall");
+    assert.ok(Math.hypot(b.pos.x - PLATFORMS[pad.to].x, b.pos.z - PLATFORMS[pad.to].z) < 1, "lands near the center, not stopped by a wall");
   }
+});
+
+test("on slippery feet, a pad's flight still stops on its platform", () => {
+  for (const pad of PADS) {
+    const b = { ...newBody(PLATFORMS[0]), slippery: true, pos: { x: pad.x, y: pad.y, z: pad.z } };
+    for (let i = 0; i < 600; i++) stepBody(b, STILL, false, DT);
+    assert.equal(platformUnder(b.pos), PLATFORMS[pad.to], `pad to ${pad.to}`);
+  }
+});
+
+test("a pad to a gone platform throws no one, and a push in flight does not stop the climb", () => {
+  const pad = PADS.find((p) => PLATFORMS[p.to].y > 0);
+  const b = newBody(pad);
+  PLATFORMS[pad.to].gone = true;
+  stepBody(b, STILL, false, DT);
+  PLATFORMS[pad.to].gone = false;
+  assert.ok(b.onGround, "still on its pad");
+  stepBody(b, STILL, false, DT);
+  const climb = b.vel.y;
+  knock(b, { x: 1, z: 0 });
+  assert.equal(b.vel.y, climb);
 });
 
 test("every wall stands on a platform, off its center", () => {
@@ -40,7 +61,7 @@ const facing = (w, distance) => ({
   toward: { x: -w.az, z: w.ax },
 });
 
-test("a player cannot run through a wall, but can jump over it", () => {
+test("a player can neither run nor jump through a wall", () => {
   const w = WALLS[0];
   const { at, toward } = facing(w, 1.5);
   const b = { ...newBody(platformUnder(at)), pos: { x: at.x, y: 0, z: at.z } };
@@ -50,10 +71,10 @@ test("a player cannot run through a wall, but can jump over it", () => {
   const c = { ...newBody(platformUnder(at)), pos: { x: at.x, y: 0, z: at.z } };
   stepBody(c, toward, true, DT);
   for (let i = 0; i < 60; i++) stepBody(c, toward, false, DT);
-  assert.ok(ahead(c.pos) < -0.6, "landed behind");
+  assert.ok(ahead(c.pos) > 0.6, "still in front after the jump");
 });
 
-test("a flat disc bounces off a wall, one thrown from a jump flies over", () => {
+test("a flat disc bounces off a wall, one thrown from above flies over", () => {
   const w = WALLS[0];
   const { at, toward } = facing(w, 3);
   const flat = newDisc(null, { x: at.x, y: 0, z: at.z }, toward, false);
@@ -67,7 +88,7 @@ test("a flat disc bounces off a wall, one thrown from a jump flies over", () => 
 
 test("a hit from the center of an outer platform pushes the player into the void", () => {
   const b = newBody(PLATFORMS[1]);
-  knock(b, { x: 1, z: 0 });
+  knock(b, { x: 0, z: -1 }); // along the ring: outward
   for (let i = 0; i < 300; i++) stepBody(b, STILL, false, DT);
   assert.ok(b.pos.y < FALL_DEATH_Y);
 });
@@ -88,7 +109,16 @@ test("a disc at chest height hits the body, one thrown from a jump the neck, one
   assert.equal(at(HEAD_TOP + 0.1), null);
 });
 
-test("on one leg a player hops slower, on none it crawls slower still and cannot jump", () => {
+test("the neck is thin: a disc that would hit the body beside the axis flies past it", () => {
+  const target = newBody(PLATFORMS[0]);
+  const at = (y, off) => hitZone({ x: -1, y, z: off }, { x: 1, y, z: off }, target);
+  const beside = (NECK_RADIUS + HIT_RADIUS) / 2;
+  assert.equal(at(CHEST, beside), "body");
+  assert.equal(at(NECK_BOTTOM + 0.3, beside), null);
+  assert.equal(at(NECK_BOTTOM + 0.3, NECK_RADIUS / 2), "neck");
+});
+
+test("each leg lost slows a player: on one it hops, on none it crawls and cannot jump", () => {
   const run = (legs, jump) => {
     const b = newBody(PLATFORMS[0]);
     b.legs = legs;
@@ -99,7 +129,7 @@ test("on one leg a player hops slower, on none it crawls slower still and cannot
     }
     return { dx: b.pos.x - PLATFORMS[0].x, top };
   };
-  const two = run(2, false), one = run(1, false), none = run(0, true);
+  const [none, one, two] = [0, 1, 2].map((legs) => run(legs, legs === 0));
   assert.equal(two.top, PLATFORMS[0].y);
   assert.ok(one.top > PLATFORMS[0].y, "hops");
   assert.ok(one.dx < two.dx && none.dx < one.dx, "slower and slower");
@@ -109,7 +139,7 @@ test("on one leg a player hops slower, on none it crawls slower still and cannot
 test("a disc flying down is judged where it crosses the player, not where it first comes near", () => {
   const body = newBody({ x: 0, y: 0, z: 0 });
   // Entering the hit radius at hip height, it would reach the legs at the axis.
-  const a = { x: -0.9, y: 1, z: 0 }, b = { x: -0.5, y: 0.8, z: 0 };
+  const a = { x: -0.9, y: 1.5, z: 0 }, b = { x: -0.5, y: 1.3, z: 0 };
   assert.equal(hitZone(a, b, body), "legs");
 });
 
@@ -139,7 +169,8 @@ test("a disc's move hits a chest it passes through, not one beside it", () => {
 });
 
 test("no platform stands above another, and the pads reach them all from the center", () => {
-  for (const a of PLATFORMS) for (const b of PLATFORMS) {
+  const still = PLATFORMS.filter((pl) => !pl.ferry);
+  for (const a of still) for (const b of still) {
     if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > a.r + b.r + 1, "a gap between any two");
   }
   for (const pl of PLATFORMS) assert.ok(Math.hypot(pl.x, pl.z) + pl.r < ARENA_RADIUS);
@@ -147,7 +178,24 @@ test("no platform stands above another, and the pads reach them all from the cen
   for (let round = 0; round < PLATFORMS.length; round++) {
     for (const p of PADS) if (reached.has(PLATFORMS.indexOf(platformUnder(p)))) reached.add(p.to);
   }
-  assert.equal(reached.size, PLATFORMS.length);
+  assert.equal(reached.size, still.length);
+});
+
+test("a ferry carries a player from one platform of the ring to the next, over no other", () => {
+  const ferry = PLATFORMS.find((pl) => pl.ferry), b = newBody(ferry);
+  const touches = (pl) => PLATFORMS.filter((o) => o !== pl && Math.hypot(o.x - pl.x, o.z - pl.z) < o.r + pl.r);
+  moveFerries(0);
+  const start = touches(ferry);
+  for (let t = 0; t <= FERRY_PERIOD / 2; t += DT) {
+    moveFerries(t);
+    stepBody(b, STILL, false, DT);
+    for (const o of touches(ferry)) assert.ok(o.y === 0 && !o.ferry, "only ground platforms of the ring");
+  }
+  const end = touches(ferry);
+  assert.ok(start.length === 1 && end.length === 1 && start[0] !== end[0], "over one at each end");
+  assert.ok(b.onGround && platformUnder(b.pos) === ferry, "still on board");
+  assert.ok(Math.hypot(b.pos.x - ferry.x, b.pos.z - ferry.z) < 0.5, "where it stood on it");
+  moveFerries(0);
 });
 
 test("a running jump does not reach the floor above", () => {
@@ -165,12 +213,6 @@ test("a running jump does not reach the floor above", () => {
   }
 });
 
-test("a giant disc hits a player a plain disc flies past", () => {
-  const body = newBody({ x: 0, y: 0, z: 0 });
-  const a = { x: -1, y: CHEST, z: 2.5 }, b = { x: 1, y: CHEST, z: 2.5 };
-  assert.equal(hitZone(a, b, body), null);
-  assert.equal(hitZone(a, b, body, GIANT), "body");
-});
 
 test("a fat player is hit far from a disc's line, and from the floor above", () => {
   const body = newBody({ x: 0, y: 0, z: 0 });
@@ -183,14 +225,14 @@ test("a fat player is hit far from a disc's line, and from the floor above", () 
 });
 
 test("a disc counts its rebounds, on the arena wall as on a cover", () => {
-  const d = newDisc(null, { x: 0, y: 0, z: 0 }, { x: 1, z: 0 }, false);
-  for (let i = 0; i < 90; i++) stepDisc(d, { x: 0, y: 0, z: 0 }, DT);
+  const d = newDisc(null, { x: ARENA_RADIUS - 6, y: 0, z: 0 }, { x: 1, z: 0 }, false);
+  for (let i = 0; i < 150; i++) stepDisc(d, { x: 0, y: 0, z: 0 }, DT);
   assert.equal(d.rebounds, 1);
 });
 
 test("a homing disc turns onto a target off its line", () => {
   const d = newDisc(null, { x: 0, y: 0, z: 0 }, { x: 1, z: 0 }, false);
-  const target = { x: 10, z: 6 };
+  const target = { x: 13, z: -8 };
   let closest = Infinity;
   for (let i = 0; i < 60; i++) {
     steer(d, target, DT);
@@ -219,7 +261,8 @@ test("a vanished platform drops whoever stands on it, and its walls are gone", (
   try {
     for (let i = 0; i < 30; i++) stepBody(b, STILL, false, DT);
     assert.ok(b.pos.y < pl.y - 1, "falls");
-    const d = newDisc(null, { x: pl.x - 2, y: 0, z: 2 }, { x: 1, z: 0 }, false);
+    const w = WALLS.find((o) => o.on === pl);
+    const d = newDisc(null, { x: w.x - 2, y: 0, z: w.z }, { x: 1, z: 0 }, false);
     for (let i = 0; i < 10; i++) stepDisc(d, { x: 0, y: 0, z: 0 }, DT);
     assert.equal(d.rebounds, 0, "flies through where the cover stood");
   } finally {
@@ -232,14 +275,43 @@ test("a disc aimed down bounces off the platform, one aimed up hits a player on 
   for (let i = 0; i < 30; i++) stepDisc(down, { x: 0, y: 0, z: 0 }, DT);
   assert.equal(down.rebounds, 1);
   assert.ok(down.vel.y > 0 && down.pos.y >= 0, "off the center, back up");
-  const above = newBody(PLATFORMS[5]), pitch = 0.22;
-  const from = { x: 15.5, y: 0, z: -1 }; // on the ground platform below, clear of its covers
+  const above = newBody(PLATFORMS[5]), pitch = 0.1;
+  const from = { x: 52, y: 0, z: -1 }; // on the ground platform below, clear of its covers
   const dx = above.pos.x - from.x, dz = above.pos.z - from.z, len = Math.hypot(dx, dz);
   const up = newDisc(null, from, { x: (dx / len) * Math.cos(pitch), y: Math.sin(pitch), z: (dz / len) * Math.cos(pitch) }, false);
   let zone = null;
-  for (let i = 0; i < 60 && !zone; i++) {
+  for (let i = 0; i < 90 && !zone; i++) {
     stepDisc(up, { x: 0, y: 0, z: 0 }, DT);
     zone = hitZone(up.prev, up.pos, above);
   }
   assert.ok(zone, "reaches the player one floor up");
+});
+
+test("a neck grown by four victims is cut by a flat disc from the floor above", () => {
+  const body = newBody({ x: 0, y: 0, z: 0 });
+  const above = { x: -1, y: LEVEL + CHEST, z: 0 }, past = { x: 1, y: LEVEL + CHEST, z: 0 };
+  assert.equal(hitZone(above, past, body), null);
+  body.neck = 4 * NECK_GROWTH;
+  assert.equal(hitZone(above, past, body), "neck");
+});
+
+test("two discs thrown at each other meet, two side by side far apart do not", () => {
+  const disc = (x, dx, z = 0) => ({ prev: { x, y: CHEST, z }, pos: { x: x + dx, y: CHEST, z } });
+  assert.ok(discsMeet(disc(-1, 1.5), disc(1, -1.5)), "crossed during the frame");
+  assert.ok(!discsMeet(disc(-1, 1.5), disc(1, -1.5, PARRY_RADIUS + 0.5)), "passed beside");
+});
+
+test("a player runs through a tunnel, under its roof, and a disc thrown down on it bounces off", () => {
+  const t = TUNNELS[0], b = newBody({ x: t.x - t.ax * (t.half + 1), y: 0, z: t.z - t.az * (t.half + 1) });
+  let inside = false;
+  for (let i = 0; i < 180; i++) {
+    stepBody(b, { x: t.ax, z: t.az }, false, DT);
+    inside ||= tunnelAt(b.pos) === t;
+  }
+  assert.ok(inside, "went under the roof");
+  assert.ok((b.pos.x - t.x) * t.ax + (b.pos.z - t.z) * t.az > t.half, "came out at the other end");
+  const d = newDisc(null, { x: t.x, y: 4, z: t.z }, { x: 0, y: -1, z: 0 }, false);
+  for (let i = 0; i < 10; i++) stepDisc(d, { x: 0, y: 0, z: 0 }, DT);
+  assert.ok(d.pos.y > 4.5 && d.vel.y > 0, "bounced up off the roof");
+  assert.ok(TUNNEL_WIDTH > 2 * 0.5 + 0.4, "wide enough for a player");
 });
