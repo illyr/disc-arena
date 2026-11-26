@@ -372,7 +372,10 @@ function toLobby() {
 
 function setMatch(on) {
   inMatch = on;
-  if (on) feed("La partie commence !");
+  if (on) {
+    feed("La partie commence !");
+    announce("Mesdames et messieurs, la partie commence.");
+  }
   renderScores();
 }
 
@@ -380,7 +383,10 @@ const winText = (e) => e ? `${e.alias} a gagné la partie !` : "";
 function showWinner(e) {
   winnerText = winText(e);
   banner(winnerText);
-  if (e) feed(winnerText);
+  if (e) {
+    feed(winnerText);
+    announce(`Fin de la partie. Victoire de ${e.alias}.`);
+  }
 }
 
 function showDeath(e, killer, how, dir) {
@@ -648,6 +654,23 @@ function updateCamera() {
 function banner(text) {
   $("banner").textContent = text;
 }
+// The referee reads the events aloud on each player's machine, deadly serious: a deep, slow French voice.
+let refereeVoice = null;
+function pickVoice() {
+  const french = speechSynthesis.getVoices().filter((v) => v.lang.startsWith("fr"));
+  refereeVoice = french.find((v) => /thomas|daniel|henri|paul|nicolas|male/i.test(v.name)) ?? french[0] ?? null;
+}
+if (window.speechSynthesis) {
+  speechSynthesis.addEventListener("voiceschanged", pickVoice);
+  pickVoice();
+}
+function announce(text) {
+  if (!window.speechSynthesis || speechSynthesis.pending) return; // one line waiting at most: the match goes on
+  const words = new SpeechSynthesisUtterance(text);
+  Object.assign(words, { lang: "fr-FR", voice: refereeVoice, pitch: 0.5, rate: 0.9 });
+  speechSynthesis.speak(words);
+}
+
 // A line in the top-left corner; an event names its players, {K} and {V}, in their colours.
 function feed(text, players = {}) {
   const line = document.createElement("div");
@@ -662,7 +685,10 @@ function feed(text, players = {}) {
     name.style.color = css(who.color);
     line.append(name);
   }
-  if (Object.keys(players).length) line.className = "event";
+  if (Object.keys(players).length) {
+    line.className = "event";
+    announce(line.textContent);
+  }
   $("feed").append(line);
   while ($("feed").children.length > 4) $("feed").firstChild.remove();
   setTimeout(() => line.remove(), 6000);

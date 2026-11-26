@@ -22,6 +22,8 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | Clic droit | décapiteur : prend les 3 disques, tue d'un coup |
 | Pad vert | propulse vers une autre plateforme |
 
+Un arbitre très sérieux annonce à voix haute chaque mort, le début et la fin des parties (synthèse vocale du navigateur).
+
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
 Une partie se joue en chacun pour soi : une décapitation vaut 5 points, éjecter quelqu'un dans le vide 1 point
 (tomber sans avoir été poussé ne rapporte rien). Le premier à 20 points gagne.
