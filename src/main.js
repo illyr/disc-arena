@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import {
-  ARENA_RADIUS, BOOST_TIME, CHEST, DISC_SPEED, FAT, FAT_TIME, GIANT, FALL_DEATH_Y, GRAVITY, LEVEL, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
+  ARENA_RADIUS, BOOST_TIME, CHEST, DISC_RADIUS, DISC_SPEED, FAT, FAT_TIME, GIANT, FALL_DEATH_Y, GRAVITY, LEVEL, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
   WALLS, WALL_HEIGHT, WALL_THICKNESS,
   chest, hitZone, thickness, knock, newBody, newDisc, platformUnder, steer, stepBody, stepDisc,
 } from "./rules.js";
@@ -390,12 +390,33 @@ function vacate(e) {
 const discGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.05, 24);
 const bladeGeo = new THREE.TorusGeometry(0.4, 0.07, 6, 24).rotateX(Math.PI / 2);
 const forward = (yaw) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
-// Where a player aims, up and down too: the disc flies there.
+// Where a player aims, up and down too: the disc flies there. Thrown from the chest, well under the eye,
+// it flies to what the eye sees under the crosshair: a player, a platform, a cover, the arena wall. A bot throws straight.
 const MAX_AIM_PITCH = 0.6;
-const aim = (e) => {
-  const pitch = Math.max(-MAX_AIM_PITCH, Math.min(MAX_AIM_PITCH, e.pitch ?? 0)), f = forward(e.yaw);
-  return { x: f.x * Math.cos(pitch), y: Math.sin(pitch), z: f.z * Math.cos(pitch) };
-};
+const raycaster = new THREE.Raycaster();
+raycaster.far = 2 * ARENA_RADIUS;
+function aim(e) {
+  const f = forward(e.yaw), look = e.pitch ?? 0;
+  const dir = new THREE.Vector3(f.x * Math.cos(look), Math.sin(look), f.z * Math.cos(look));
+  if (!e.bot) {
+    const b = e.body.pos, eye = new THREE.Vector3(b.x, b.y + EYE - (e.legs ? 0 : STUMP * SCALE), b.z);
+    raycaster.set(eye, dir);
+    const others = entities.filter((o) => o !== e && o.alive && !o.empty);
+    const hit = raycaster.intersectObjects([...platformParts.filter((_, i) => !PLATFORMS[i].gone).flat(), wall, ...others.map((o) => o.group)])
+      .find((h) => h.object.visible);
+    // On a player, the point of the ray above its feet: the disc, flying down or up, enters the hit zone at that height.
+    let target = hit?.object;
+    while (target && !others.some((o) => o.group === target)) target = target.parent;
+    target = others.find((o) => o.group === target);
+    const far = target ? Math.hypot(target.body.pos.x - eye.x, target.body.pos.z - eye.z) / Math.hypot(dir.x, dir.z) : hit?.distance;
+    const to = eye.addScaledVector(dir, far ?? raycaster.far);
+    if (target) to.y = Math.max(to.y, target.body.pos.y + DISC_RADIUS + 0.05); // at the feet, it would hit the floor first
+    const c = chest(e.body); // the disc starts a little ahead of it, see newDisc
+    dir.set(to.x - c.x - f.x * 0.8, to.y - c.y, to.z - c.z - f.z * 0.8).normalize();
+  }
+  const pitch = Math.max(-MAX_AIM_PITCH, Math.min(MAX_AIM_PITCH, Math.asin(dir.y))), flat = Math.hypot(dir.x, dir.z) || 1;
+  return { x: (dir.x / flat) * Math.cos(pitch), y: Math.sin(pitch), z: (dir.z / flat) * Math.cos(pitch) };
+}
 
 function throwDisc(e, decap) {
   const d = newDisc(e, e.body.pos, aim(e), decap, has(e, "giant") ? GIANT : 1);

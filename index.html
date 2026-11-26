@@ -7,7 +7,7 @@
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #07060f; font-family: system-ui, sans-serif; color: #eee; }
     canvas { display: block; }
-    #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: #fff; }
+    #crosshair { position: fixed; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px; pointer-events: none; }
     #discs { position: fixed; left: 24px; bottom: 20px; font-size: 32px; letter-spacing: 6px; }
     #scores { position: fixed; right: 16px; top: 12px; padding: 8px 14px; border-radius: 8px; background: #000a; text-align: right; line-height: 1.4; font-size: 22px; font-weight: 700; text-shadow: 0 0 4px #000; }
     #scores > div:first-child { font-size: 13px; font-weight: 400; opacity: 0.8; }
@@ -53,7 +53,12 @@
   </script>
 </head>
 <body>
-  <div id="crosshair"></div>
+  <!-- Four ticks around a gap and a dot, white edged with black to read on any background. -->
+  <svg id="crosshair" viewBox="-16 -16 32 32" stroke-linecap="round">
+    <path d="M0-13V-6M0 6V13M-13 0H-6M6 0H13" stroke="#000" stroke-width="4.5" />
+    <path d="M0-13V-6M0 6V13M-13 0H-6M6 0H13" stroke="#fff" stroke-width="2" />
+    <circle r="1.8" fill="#fff" stroke="#000" stroke-width="1" />
+  </svg>
   <div id="discs"></div>
   <div id="powers"></div>
   <div id="scores"></div>

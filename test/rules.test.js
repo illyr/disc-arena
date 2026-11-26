@@ -106,6 +106,13 @@ test("on one leg a player hops slower, on none it crawls slower still and cannot
   assert.equal(none.top, PLATFORMS[0].y, "no jump");
 });
 
+test("a disc flying down is judged where it crosses the player, not where it first comes near", () => {
+  const body = newBody({ x: 0, y: 0, z: 0 });
+  // Entering the hit radius at hip height, it would reach the legs at the axis.
+  const a = { x: -0.9, y: 1, z: 0 }, b = { x: -0.5, y: 0.8, z: 0 };
+  assert.equal(hitZone(a, b, body), "legs");
+});
+
 test("a jump clears a disc flying at chest height", () => {
   const b = newBody(PLATFORMS[0]);
   let top = 0;

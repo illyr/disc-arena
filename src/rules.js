@@ -264,7 +264,10 @@ export function segmentHits(a, b, c, radius) {
 // Where a disc's move in one frame hits a player: null, "legs", "body", or "neck" (the long neck and the head).
 // size: the disc's, a giant one hits further from its line. scale: the body's, a fat one is hit higher and wider.
 export function hitZone(a, b, body, size = 1, scale = 1) {
-  const y = ((a.y + b.y) / 2 - body.pos.y) / scale;
+  // The height where the disc's line crosses the player's axis: what it cuts, flying down or up as flat.
+  const dx = b.x - a.x, dz = b.z - a.z, len2 = dx * dx + dz * dz;
+  const t = len2 ? ((body.pos.x - a.x) * dx + (body.pos.z - a.z) * dz) / len2 : 0.5;
+  const y = (a.y + (b.y - a.y) * t - body.pos.y) / scale;
   if (y < 0 || y > HEAD_TOP) return null;
   const flat = (p) => ({ x: p.x, y: 0, z: p.z });
   if (!segmentHits(flat(a), flat(b), flat(body.pos), HIT_RADIUS * scale + DISC_RADIUS * (size - 1))) return null;

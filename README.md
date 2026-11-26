@@ -17,8 +17,8 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | Touche | Action |
 |---|---|
 | ZQSD / WASD | bouger |
-| Espace | sauter : par-dessus un disque, ou pour lancer à hauteur de cou |
-| Clic gauche | disque : pousse la cible, rebondit 3 fois puis revient |
+| Espace | sauter : par-dessus un disque |
+| Clic gauche | disque : pousse la cible, rebondit 3 fois puis revient ; il vole vers ce qui est sous la croix du viseur |
 | Clic droit | décapiteur : prend les 3 disques, tue d'un coup |
 | Tremplin vert | propulse vers une autre plateforme, et seul moyen de monter d'un étage ; on redescend en sautant dans le vide vers la plateforme d'en dessous |
 | Mur à liseré rose | abri : arrête les joueurs et renvoie les disques lancés à plat ; on saute par-dessus, et un disque lancé en sautant passe au-dessus |
@@ -49,7 +49,7 @@ Toutes les 15 s, une plateforme clignote en rouge 3 s puis disparaît 6 s : ceux
 La tête d'un décapité se shoote en marchant dessus ; dans le vide : « Et c'est le buuut ! ».
 Tué par un autre joueur, on revoit sa mort par ses yeux (« Killcam »).
 
-Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
+Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : vise la tête.
 Un disque simple qui touche bas, dans les jambes (vise vers le bas, ou touche un joueur en plein saut), coupe une jambe au lieu de pousser,
 façon Chevalier noir des Monty Python : « C'est juste une égratignure ! ». Sur une jambe on avance à cloche-pied, plus lentement et en sautant moins haut ;
 sans jambes (« Match nul ! ») on rampe, encore plus lentement, sans sauter, jusqu'à la mort. Couper une jambe ne rapporte rien,
