@@ -403,8 +403,11 @@ function throwDisc(e, decap) {
   d.mesh = new THREE.Mesh(decap ? bladeGeo : discGeo, glow(decap ? 0xff1744 : e.color, 0.8));
   d.mesh.scale.setScalar(d.size);
   scene.add(d.mesh);
+  d.id = ++thrown;
   discs.push(d);
+  whoosh(e.body.pos, decap);
 }
+let thrown = 0; // the discs thrown so far: a guest hears a disc when it sees a new number
 
 function removeDisc(d) {
   scene.remove(d.mesh);
@@ -714,6 +717,7 @@ function showDeath(e, killer, how, dir, shout, boo) {
   }
   if (how === "decap") {
     decapitate(e, dir);
+    splat(e.group.position);
     cheerUntil = now + 4;
   }
   if (boo) roar(true);
@@ -1126,6 +1130,72 @@ function roar(jeer = false) {
   }
 }
 
+// The noises of the arena, made up on the spot like the crowd, fainter the further from me.
+const HEARING = 45; // m from me past which nothing is heard
+let hiss = null; // a second of white noise, the stuff of whooshes and splats
+function sound(at) {
+  const loud = 1 - Math.hypot(at.x - me.body.pos.x, at.y - me.body.pos.y, at.z - me.body.pos.z) / HEARING;
+  if (muted || !window.AudioContext || loud <= 0) return null;
+  crowd ??= new AudioContext();
+  crowd.resume();
+  if (!hiss) {
+    hiss = crowd.createBuffer(1, crowd.sampleRate, crowd.sampleRate);
+    hiss.getChannelData(0).forEach((_, i, d) => (d[i] = Math.random() * 2 - 1));
+  }
+  const out = crowd.createGain();
+  out.gain.value = loud;
+  out.connect(crowd.destination);
+  return { ctx: crowd, t: crowd.currentTime, out };
+}
+// Noise through a filter, its gain rising in attack s then dying out by end s.
+function noise({ ctx, t, out }, type, from, to, end, peak, attack = 0.01, q = 1, at = 0) {
+  const src = ctx.createBufferSource();
+  src.buffer = hiss;
+  const filter = ctx.createBiquadFilter();
+  filter.type = type;
+  filter.Q.value = q;
+  filter.frequency.setValueAtTime(from, t + at);
+  filter.frequency.exponentialRampToValueAtTime(to, t + at + end);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, t + at);
+  gain.gain.exponentialRampToValueAtTime(peak, t + at + attack);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + at + end);
+  src.connect(filter).connect(gain).connect(out);
+  src.start(t + at);
+  src.stop(t + at + end);
+}
+// A tone sliding from one pitch to another, dying out by end s.
+function tone({ ctx, t, out }, type, from, to, end, peak, at = 0) {
+  const osc = ctx.createOscillator();
+  osc.type = type;
+  osc.frequency.setValueAtTime(from, t + at);
+  osc.frequency.exponentialRampToValueAtTime(to, t + at + end);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(peak, t + at);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + at + end);
+  osc.connect(gain).connect(out);
+  osc.start(t + at);
+  osc.stop(t + at + end);
+}
+// A disc thrown: a whoosh that rises, and the ring of the disc; the decapitator, lower, longer, with the shing of a blade.
+function whoosh(at, decap) {
+  const s = sound(at);
+  if (!s) return;
+  noise(s, "bandpass", decap ? 300 : 700, decap ? 1800 : 3000, decap ? 0.55 : 0.35, 0.5, 0.06, 2);
+  if (decap) {
+    tone(s, "sine", 3000, 2900, 0.6, 0.06);
+    tone(s, "sine", 3170, 3050, 0.6, 0.05);
+  } else tone(s, "triangle", 1800, 1500, 0.12, 0.08);
+}
+// A head cut off: a wet thump, the squelch, then gurgles.
+function splat(at) {
+  const s = sound(at);
+  if (!s) return;
+  tone(s, "sine", 160, 40, 0.25, 0.9);
+  noise(s, "lowpass", 1400, 200, 0.35, 0.9, 0.005);
+  for (let i = 0; i < 8; i++) noise(s, "bandpass", 300 + Math.random() * 900, 150 + Math.random() * 300, 0.06, 0.6, 0.005, 6, 0.08 + Math.random() * 0.5);
+}
+
 // An exploit across the screen for 2 s: the player's card, their alias, the shout.
 function splash(who, shout) {
   const card = document.createElement("div");
@@ -1322,7 +1392,7 @@ function hostState() {
       knocks: e.knocks, kx: e.knockDir.x, kz: e.knockDir.z,
       how: e.how, shout: e.shout, killer: entities.indexOf(e.killer), dx: e.dir?.x ?? 0, dz: e.dir?.z ?? 0,
     }),
-    discs: discs.map((d) => [d.pos.x, d.pos.y, d.pos.z, d.decap ? 1 : 0, entities.indexOf(d.owner), d.size]),
+    discs: discs.map((d) => [d.pos.x, d.pos.y, d.pos.z, d.decap ? 1 : 0, entities.indexOf(d.owner), d.size, d.id]),
     boost: PLATFORMS.indexOf(boostAt),
     maluses: maluses.map((m) => now >= m.backAt),
     items: shownItems,
@@ -1433,6 +1503,7 @@ function showDiscs(list) {
     const d = list[i];
     mesh.visible = !!d;
     if (!d) return;
+    if (d[6] > thrown) whoosh({ x: d[0], y: d[1], z: d[2] }, d[3]);
     const color = d[3] ? 0xff1744 : entities[d[4]].color;
     mesh.position.set(d[0], d[1], d[2]);
     mesh.scale.setScalar(d[5]);
@@ -1440,6 +1511,7 @@ function showDiscs(list) {
     mesh.material.color.setHex(color);
     mesh.material.emissive.setHex(color);
   });
+  thrown = Math.max(thrown, ...list.map((d) => d?.[6] ?? 0));
 }
 
 function hostFrame(dt) {
