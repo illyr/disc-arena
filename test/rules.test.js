@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ARENA_RADIUS, CHEST, DISC_SPEED, FALL_DEATH_Y, HEAD_TOP, NECK_BOTTOM, PADS, PLATFORMS, WALLS, WALL_HEIGHT,
+  ARENA_RADIUS, CHEST, DISC_SPEED, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
   hitZone, knock, newBody, newDisc, platformUnder, segmentHits, stepBody, stepDisc,
 } from "../src/rules.js";
 
@@ -10,7 +10,7 @@ const STILL = { x: 0, z: 0 };
 
 test("a disc bounces on the arena wall and keeps its speed", () => {
   const d = newDisc(null, { x: 0, y: 0, z: 0 }, { x: 1, z: 0 }, false);
-  for (let i = 0; i < 60; i++) stepDisc(d, { x: 0, y: 0, z: 0 }, DT);
+  for (let i = 0; i < 90; i++) stepDisc(d, { x: 0, y: 0, z: 0 }, DT);
   assert.ok(d.vel.x < 0, "it flies back after the wall");
   assert.equal(d.bounces, 2);
   assert.ok(Math.hypot(d.pos.x, d.pos.z) <= ARENA_RADIUS);
@@ -20,7 +20,7 @@ test("a disc bounces on the arena wall and keeps its speed", () => {
 test("every pad throws the player onto its target platform, over no wall", () => {
   for (const pad of PADS) {
     const b = newBody(pad);
-    for (let i = 0; i < 120; i++) stepBody(b, STILL, false, DT);
+    for (let i = 0; i < 240; i++) stepBody(b, STILL, false, DT);
     assert.ok(b.onGround);
     assert.equal(platformUnder(b.pos), PLATFORMS[pad.to]);
     assert.ok(Math.hypot(b.pos.x - PLATFORMS[pad.to].x, b.pos.z - PLATFORMS[pad.to].z) < 0.3, "lands near the center, not stopped by a wall");
@@ -102,4 +102,31 @@ test("a disc's move hits a chest it passes through, not one beside it", () => {
   const a = { x: 0, y: 1.2, z: 0 }, b = { x: 1, y: 1.2, z: 0 };
   assert.ok(segmentHits(a, b, { x: 0.5, y: 1.2, z: 0.3 }, 0.6));
   assert.ok(!segmentHits(a, b, { x: 0.5, y: 1.2, z: 1 }, 0.6));
+});
+
+test("no platform stands above another, and the pads reach them all from the center", () => {
+  for (const a of PLATFORMS) for (const b of PLATFORMS) {
+    if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > a.r + b.r + 1, "a gap between any two");
+  }
+  for (const pl of PLATFORMS) assert.ok(Math.hypot(pl.x, pl.z) + pl.r < ARENA_RADIUS);
+  const reached = new Set([0]);
+  for (let round = 0; round < PLATFORMS.length; round++) {
+    for (const p of PADS) if (reached.has(PLATFORMS.indexOf(platformUnder(p)))) reached.add(p.to);
+  }
+  assert.equal(reached.size, PLATFORMS.length);
+});
+
+test("a running jump does not reach the floor above", () => {
+  for (const pl of PLATFORMS.filter((p) => p.y === 0)) {
+    const above = PLATFORMS.filter((p) => p.y === LEVEL)
+      .sort((a, b) => Math.hypot(a.x - pl.x, a.z - pl.z) - Math.hypot(b.x - pl.x, b.z - pl.z))[0];
+    const d = Math.hypot(above.x - pl.x, above.z - pl.z), toward = { x: (above.x - pl.x) / d, z: (above.z - pl.z) / d };
+    // The best a jump can do: from the very rim, running straight at it.
+    const b = {
+      pos: { x: pl.x + toward.x * (pl.r - 0.1), y: 0, z: pl.z + toward.z * (pl.r - 0.1) },
+      vel: { x: toward.x * RUN_SPEED, y: JUMP_SPEED, z: toward.z * RUN_SPEED }, push: { x: 0, z: 0 }, onGround: false,
+    };
+    for (let i = 0; i < 120; i++) stepBody(b, toward, false, DT);
+    assert.ok(b.pos.y < 0 && !b.onGround, "falls into the void");
+  }
 });

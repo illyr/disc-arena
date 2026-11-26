@@ -12,37 +12,56 @@ export const CHEST = 1.55; // the discs fly flat, at chest height
 export const HIT_RADIUS = 0.7;
 export const NECK_BOTTOM = 2.15; // above it, up to the top of the head, a disc cuts the head off
 export const HEAD_TOP = 3.65;
-export const ARENA_RADIUS = 20; // the wall the discs bounce on
+export const ARENA_RADIUS = 30; // the wall the discs bounce on
 export const DISC_SPEED = 24;
 export const DISC_LIFE = 3; // seconds before a disc flies home
 export const MAX_DISCS = 3;
 export const PAD_RADIUS = 0.9;
-export const PAD_FLIGHT = 1.1;
+export const PAD_FLIGHT = 1.1; // seconds, up to PAD_REACH away; longer for longer flights
+export const PAD_REACH = 12;
+export const LEVEL = 3; // between two floors: higher than a jump, so only the pads go up
 export const BODY_RADIUS = 0.5;
 export const DISC_RADIUS = 0.32;
 // Cover: chest high, so that a flat disc bounces off it while one thrown from a jump flies over.
 export const WALL_HEIGHT = 2;
 export const WALL_THICKNESS = 0.4;
 
-const RING = [[13, 0], [-13, 0], [0, 13], [0, -13]];
-export const PLATFORMS = [{ x: 0, z: 0, r: 5 }, ...RING.map(([x, z]) => ({ x, z, r: 4 }))];
-// The center has a pad to each outer platform, each outer platform a pad back to the center.
-export const PADS = RING.flatMap(([x, z], i) => [
-  { x: x * 0.27, z: z * 0.27, to: i + 1 },
-  { x: x * 0.8, z: z * 0.8, to: 0 },
+// Three floors, none above another: the center and four platforms on the axes on the ground, four on the
+// diagonals one floor up, four towers on the axes two floors up, near the wall. Going down: a jump off the
+// edge, or the towers' pads. Going up: the pads only.
+const AXES = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+const ring = (distance, y, r, turn) => AXES.map(([x, z]) => {
+  const c = Math.cos(turn), s = Math.sin(turn);
+  return { x: (x * c - z * s) * distance, z: (x * s + z * c) * distance, y, r };
+});
+export const PLATFORMS = [
+  { x: 0, z: 0, y: 0, r: 6 },
+  ...ring(14, 0, 4, 0), // 1-4
+  ...ring(17, LEVEL, 3.5, Math.PI / 4), // 5-8, the diagonal next to each of the above, turning
+  ...ring(25, 2 * LEVEL, 2.5, 0), // 9-12, the towers
+];
+// A pad sits on its platform's rim, on the side of the platform it throws to.
+const pad = (from, to) => {
+  const a = PLATFORMS[from], b = PLATFORMS[to], d = Math.hypot(b.x - a.x, b.z - a.z), k = (a.r - 1.2) / d;
+  return { x: a.x + (b.x - a.x) * k, y: a.y, z: a.z + (b.z - a.z) * k, to };
+};
+export const PADS = [1, 2, 3, 4].flatMap((i) => [
+  pad(0, i), pad(i, 0), // the center and the ground ring, both ways
+  pad(i, i + 4), // up to the diagonal
+  pad(i + 4, i + 8), // up to the tower
+  pad(i + 8, 0), // from the tower back down to the center
 ]);
 
-// Each wall: its middle, the unit direction it runs along, half its length. On the center platform they
-// stand on the diagonals, on the outer ones beside the axis: off the flights of the pads.
+// Each wall: its middle, its floor, the unit direction it runs along, half its length. On the center
+// platform they stand on the diagonals, on the ground ring beside the axis: off the flights of the pads.
 const DIAGONAL = Math.SQRT1_2;
 export const WALLS = [
   ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([sx, sz]) => ({
-    x: sx * 2.6 * DIAGONAL, z: sz * 2.6 * DIAGONAL, ax: -sz * DIAGONAL, az: sx * DIAGONAL, half: 1,
+    x: sx * 3.2 * DIAGONAL, y: 0, z: sz * 3.2 * DIAGONAL, ax: -sz * DIAGONAL, az: sx * DIAGONAL, half: 1.2,
   })),
-  ...RING.flatMap(([x, z]) => {
-    const ux = Math.sign(x), uz = Math.sign(z); // toward the outside
-    return [-1, 1].map((side) => ({ x: x - ux * 0.8 - uz * side * 2, z: z - uz * 0.8 + ux * side * 2, ax: uz, az: ux, half: 0.8 }));
-  }),
+  ...AXES.flatMap(([ux, uz]) => [-1, 1].map((side) => ({
+    x: ux * 13.2 - uz * side * 2, y: 0, z: uz * 13.2 + ux * side * 2, ax: uz, az: ux, half: 0.8,
+  }))),
 ];
 
 // Where p stands from wall w: along it (u) and across it (v).
@@ -53,9 +72,9 @@ const wallLocal = (p, w) => {
 
 // Keeps a body out of the walls it stands below the top of.
 function blockBody(b) {
-  if (b.pos.y >= WALL_HEIGHT) return;
   const reach = WALL_THICKNESS / 2 + BODY_RADIUS;
   for (const w of WALLS) {
+    if (b.pos.y >= w.y + WALL_HEIGHT || b.pos.y < w.y - 1) continue;
     const { u, v } = wallLocal(b.pos, w);
     const along = Math.max(-w.half, Math.min(w.half, u));
     const cx = w.x + w.ax * along, cz = w.z + w.az * along;
@@ -73,7 +92,7 @@ export const platformUnder = (p) => PLATFORMS.find((pl) => Math.hypot(p.x - pl.x
 export const chest = (b) => ({ x: b.pos.x, y: b.pos.y + CHEST, z: b.pos.z });
 
 export function newBody(platform) {
-  return { pos: { x: platform.x, y: 0, z: platform.z }, vel: { x: 0, y: 0, z: 0 }, push: { x: 0, z: 0 }, onGround: true };
+  return { pos: { x: platform.x, y: platform.y, z: platform.z }, vel: { x: 0, y: 0, z: 0 }, push: { x: 0, z: 0 }, onGround: true };
 }
 
 // wish: the wanted direction on the ground, of length 0 to 1.
@@ -87,25 +106,28 @@ export function stepBody(b, wish, jump, dt) {
     if (jump) b.vel.y = JUMP_SPEED;
   }
   b.vel.y -= GRAVITY * dt;
+  const was = b.pos.y;
   b.pos.x += (b.vel.x + b.push.x) * dt;
   b.pos.y += b.vel.y * dt;
   b.pos.z += (b.vel.z + b.push.z) * dt;
   blockBody(b);
-  // Under the top by less than a meter: landed. Deeper, it went past the edge and keeps falling.
-  b.onGround = b.vel.y <= 0 && b.pos.y <= 0 && b.pos.y > -1 && !!platformUnder(b.pos);
+  // Landed if it went through the top during the frame. From below, it went past the edge and keeps falling.
+  const pl = platformUnder(b.pos);
+  b.onGround = !!pl && b.vel.y <= 0 && b.pos.y <= pl.y && was >= pl.y;
   if (b.onGround) {
-    b.pos.y = 0;
+    b.pos.y = pl.y;
     b.vel.y = 0;
   }
-  const pad = b.onGround && PADS.find((p) => Math.hypot(b.pos.x - p.x, b.pos.z - p.z) < PAD_RADIUS);
+  const pad = b.onGround && PADS.find((p) => p.y === pl.y && Math.hypot(b.pos.x - p.x, b.pos.z - p.z) < PAD_RADIUS);
   if (pad) launch(b, PLATFORMS[pad.to]);
 }
 
-// The flight from a pad lands on the center of the target platform after PAD_FLIGHT seconds.
+// The flight from a pad lands on the center of the target platform, whatever its floor.
 export function launch(b, to) {
-  b.vel.x = (to.x - b.pos.x) / PAD_FLIGHT;
-  b.vel.z = (to.z - b.pos.z) / PAD_FLIGHT;
-  b.vel.y = (GRAVITY * PAD_FLIGHT) / 2;
+  const time = PAD_FLIGHT * Math.max(1, Math.hypot(to.x - b.pos.x, to.z - b.pos.z) / PAD_REACH);
+  b.vel.x = (to.x - b.pos.x) / time;
+  b.vel.z = (to.z - b.pos.z) / time;
+  b.vel.y = (to.y - b.pos.y) / time + (GRAVITY * time) / 2;
   b.push.x = b.push.z = 0;
   b.onGround = false;
 }
@@ -156,13 +178,14 @@ export function stepDisc(d, home, dt) {
     d.pos.z = nz * ARENA_RADIUS;
     if (--d.bounces < 0) d.returning = true;
   }
-  if (!d.returning && d.pos.y < WALL_HEIGHT) bounceOffWalls(d);
+  if (!d.returning) bounceOffWalls(d);
 }
 
 // A disc that reaches a wall, or crossed it during the frame, bounces back to the side it came from.
 function bounceOffWalls(d) {
   const reach = WALL_THICKNESS / 2 + DISC_RADIUS;
   for (const w of WALLS) {
+    if (d.pos.y < w.y || d.pos.y >= w.y + WALL_HEIGHT) continue;
     const a = wallLocal(d.prev, w), b = wallLocal(d.pos, w);
     const crossed = Math.sign(a.v) !== Math.sign(b.v);
     if (Math.abs(b.u) > w.half + DISC_RADIUS || (!crossed && Math.abs(b.v) >= reach)) continue;

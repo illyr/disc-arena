@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import {
-  ARENA_RADIUS, CHEST, DISC_SPEED, FALL_DEATH_Y, GRAVITY, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
+  ARENA_RADIUS, CHEST, DISC_SPEED, FALL_DEATH_Y, GRAVITY, LEVEL, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
   WALLS, WALL_HEIGHT, WALL_THICKNESS,
   chest, hitZone, knock, newBody, newDisc, platformUnder, stepBody, stepDisc,
 } from "./rules.js";
@@ -51,7 +51,7 @@ renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x07060f);
-scene.fog = new THREE.Fog(0x07060f, 35, 90);
+scene.fog = new THREE.Fog(0x07060f, 50, 120);
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 200);
 camera.rotation.order = "YXZ";
 addEventListener("resize", () => {
@@ -65,19 +65,21 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(5, 20, 8);
 scene.add(sun);
 
+const FLOOR_COLORS = [0x00e5ff, 0xffc400, 0xff6d00]; // the rim of each floor's platforms, here and on the radar
 // The arena: platforms over the void, their pads, the wall the discs bounce on.
 const glow = (color, intensity = 1.5) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: intensity });
 for (const pl of PLATFORMS) {
-  const block = new THREE.Mesh(new THREE.CylinderGeometry(pl.r, pl.r * 0.6, 1.5, 48), new THREE.MeshStandardMaterial({ color: 0x3a3f4b }));
-  block.position.set(pl.x, -0.75, pl.z);
-  const edge = new THREE.Mesh(new THREE.TorusGeometry(pl.r, 0.06, 8, 64), glow(0x00e5ff));
+  const thick = pl.y ? 0.6 : 1.5; // the upper floors thin: a flat disc flies under them
+  const block = new THREE.Mesh(new THREE.CylinderGeometry(pl.r, pl.r * 0.6, thick, 48), new THREE.MeshStandardMaterial({ color: 0x3a3f4b }));
+  block.position.set(pl.x, pl.y - thick / 2, pl.z);
+  const edge = new THREE.Mesh(new THREE.TorusGeometry(pl.r, 0.06, 8, 64), glow(FLOOR_COLORS[Math.round(pl.y / LEVEL)]));
   edge.rotation.x = Math.PI / 2;
-  edge.position.set(pl.x, 0.01, pl.z);
+  edge.position.set(pl.x, pl.y + 0.01, pl.z);
   scene.add(block, edge);
 }
 const pads = PADS.map((p) => {
   const pad = new THREE.Mesh(new THREE.CylinderGeometry(PAD_RADIUS, PAD_RADIUS, 0.08, 32), glow(0x76ff03));
-  pad.position.set(p.x, 0.04, p.z);
+  pad.position.set(p.x, p.y + 0.04, p.z);
   scene.add(pad);
   return pad;
 });
@@ -89,28 +91,32 @@ for (const w of WALLS) {
   const top = new THREE.Mesh(new THREE.BoxGeometry(w.half * 2, 0.06, WALL_THICKNESS + 0.04), glow(0xff4081));
   top.position.y = WALL_HEIGHT;
   cover.add(block, top);
-  cover.position.set(w.x, 0, w.z);
+  cover.position.set(w.x, w.y, w.z);
   cover.rotation.y = Math.atan2(-w.az, w.ax);
   scene.add(cover);
 }
 const wall = new THREE.Mesh(
-  new THREE.CylinderGeometry(ARENA_RADIUS, ARENA_RADIUS, 6, 64, 1, true),
+  new THREE.CylinderGeometry(ARENA_RADIUS, ARENA_RADIUS, 12, 64, 1, true),
   new THREE.MeshBasicMaterial({ color: 0x7c4dff, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false }),
 );
-wall.position.y = CHEST;
-const wallLine = new THREE.Mesh(new THREE.TorusGeometry(ARENA_RADIUS, 0.05, 6, 128), glow(0x7c4dff));
-wallLine.rotation.x = Math.PI / 2;
-wallLine.position.y = CHEST;
+wall.position.y = CHEST + 2;
+// A line at the height of the discs of each floor.
+for (let floor = 0; floor < 3; floor++) {
+  const wallLine = new THREE.Mesh(new THREE.TorusGeometry(ARENA_RADIUS, 0.05, 6, 128), glow(0x7c4dff));
+  wallLine.rotation.x = Math.PI / 2;
+  wallLine.position.y = CHEST + floor * LEVEL;
+  scene.add(wallLine);
+}
 const abyss = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshBasicMaterial({ color: 0x3a0010 }));
 abyss.rotation.x = -Math.PI / 2;
 abyss.position.y = -40;
-scene.add(wall, wallLine, abyss);
+scene.add(wall, abyss);
 
 // The stands around the arena, and their crowd: it sways, and jumps up at each death.
 const STAND_ROWS = 8;
-const STAND_RADIUS = 23;
+const STAND_RADIUS = ARENA_RADIUS + 3;
 const STAND_DEPTH = 1.6;
-const STAND_RISE = 1.3;
+const STAND_RISE = 1.6;
 const standMaterial = new THREE.MeshStandardMaterial({ color: 0x2b2f3a, side: THREE.DoubleSide });
 const fans = [];
 for (let row = 0; row < STAND_ROWS; row++) {
@@ -534,8 +540,9 @@ function updateHeads(dt) {
     m.rotation.x += h.spin.x * dt;
     m.rotation.y += h.spin.y * dt;
     m.rotation.z += h.spin.z * dt;
-    if (h.vel.y < 0 && m.position.y < 0.25 && m.position.y > -0.5 && platformUnder(m.position)) {
-      m.position.y = 0.25;
+    const ground = platformUnder(m.position)?.y;
+    if (h.vel.y < 0 && m.position.y < ground + 0.25 && m.position.y > ground - 0.5) {
+      m.position.y = ground + 0.25;
       h.vel.set(h.vel.x * 0.6, -h.vel.y * 0.4, h.vel.z * 0.6);
       h.spin.multiplyScalar(0.6);
       bleed(m.position, 20, UP, 3, 4);
@@ -571,8 +578,8 @@ function bleed(at, count, dir, speed, spread) {
 }
 
 // A drop that lands on a platform leaves a stain there; the oldest stains give way to the new.
-function stain(p, size) {
-  dummy.position.set(p.x, 0.012 + Math.random() * 0.004, p.z);
+function stain(p, ground, size) {
+  dummy.position.set(p.x, ground + 0.012 + Math.random() * 0.004, p.z);
   dummy.scale.setScalar(size * (1 + Math.random()));
   dummy.updateMatrix();
   stainMesh.setMatrixAt(stainCount++ % MAX_STAINS, dummy.matrix);
@@ -586,8 +593,9 @@ function updateBlood(dt) {
     d.v.y -= GRAVITY * dt;
     d.p.addScaledVector(d.v, dt);
     d.life -= dt;
-    const landed = d.v.y < 0 && d.p.y <= 0.01 && d.p.y > -0.3 && platformUnder(d.p);
-    if (landed) stain(d.p, d.size);
+    const ground = platformUnder(d.p)?.y;
+    const landed = d.v.y < 0 && d.p.y <= ground + 0.01 && d.p.y > ground - 0.3;
+    if (landed) stain(d.p, ground, d.size);
     if (landed || d.life <= 0) continue;
     drops[n++] = d;
     dummy.position.copy(d.p);
@@ -610,7 +618,7 @@ function shoot(e) {
 
 function think(e) {
   const b = e.body, ai = e.ai;
-  const foes = entities.filter((o) => o !== e && o.alive);
+  const foes = entities.filter((o) => o !== e && o.alive && Math.abs(o.body.pos.y - b.pos.y) < 1); // on its floor
   const dist = (o) => Math.hypot(o.body.pos.x - b.pos.x, o.body.pos.z - b.pos.z);
   const target = foes.sort((a, c) => dist(a) - dist(c))[0];
   let jump = false;
@@ -868,6 +876,56 @@ function splash(who, shout) {
   document.querySelector(".splash")?.remove();
   document.body.append(card);
   setTimeout(() => card.remove(), 2000);
+}
+
+// The radar: the arena seen from above, turning with the player so that ahead is up. The floors by
+// the colour of their rim, the players in their colours, smaller on a floor below, ringed on one above.
+const radar = $("radar").getContext("2d");
+const RADAR_SCALE = 170 / ARENA_RADIUS; // pixels a unit, the canvas being 360 wide for sharp screens
+function drawRadar() {
+  const f = forward(me.yaw), at = me.body?.pos ?? { x: 0, y: 0, z: 0 };
+  // Where a point shows: across the player's right, and along their forward, up.
+  const spot = (p) => [180 + ((p.x - at.x) * -f.z + (p.z - at.z) * f.x) * RADAR_SCALE, 180 - ((p.x - at.x) * f.x + (p.z - at.z) * f.z) * RADAR_SCALE];
+  radar.clearRect(0, 0, 360, 360);
+  radar.save();
+  radar.beginPath();
+  radar.arc(180, 180, 180, 0, 2 * Math.PI);
+  radar.clip();
+  for (const pl of PLATFORMS) {
+    radar.fillStyle = "#3a3f4b";
+    radar.strokeStyle = css(FLOOR_COLORS[Math.round(pl.y / LEVEL)]);
+    radar.lineWidth = 4;
+    radar.beginPath();
+    radar.arc(...spot(pl), pl.r * RADAR_SCALE, 0, 2 * Math.PI);
+    radar.fill();
+    radar.stroke();
+  }
+  const top = leader();
+  for (const e of entities) {
+    if (e.empty || !e.alive || !e.body || e === me) continue;
+    const floor = Math.round((e.body.pos.y - at.y) / LEVEL); // above, below, or level with the player
+    const [x, y] = spot(e.body.pos);
+    radar.fillStyle = css(e.color);
+    radar.beginPath();
+    radar.arc(x, y, floor < 0 ? 7 : 11, 0, 2 * Math.PI);
+    radar.fill();
+    radar.lineWidth = 4;
+    radar.strokeStyle = e === top ? "#ffd700" : floor > 0 ? "#fff" : "#000";
+    radar.stroke();
+  }
+  radar.restore();
+  // The player, in the middle, pointing up.
+  radar.fillStyle = css(me.color);
+  radar.strokeStyle = "#fff";
+  radar.lineWidth = 3;
+  radar.beginPath();
+  radar.moveTo(180, 162);
+  radar.lineTo(192, 194);
+  radar.lineTo(180, 188);
+  radar.lineTo(168, 194);
+  radar.closePath();
+  radar.fill();
+  radar.stroke();
 }
 
 // A line in the top-left corner; an event names its players, {K} and {V}, in their colours.
@@ -1151,6 +1209,7 @@ renderer.setAnimationLoop(() => {
   updateHeads(dt);
   updateBlood(dt);
   updateFans();
+  drawRadar();
   pads.forEach((p) => (p.material.emissiveIntensity = 1.2 + 0.6 * Math.sin(now * 6)));
   $("discs").textContent = "●".repeat(me.discs ?? 0) + "○".repeat(MAX_DISCS - (me.discs ?? MAX_DISCS));
   if (me.body) updateCamera();

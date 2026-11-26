@@ -1,7 +1,7 @@
 # Disc Arena
 
 Un petit clone de **Ricochet** (le mod multijoueur de Valve sur le moteur de Half-Life, 2000) dans le navigateur, en Three.js :
-des plateformes au-dessus du vide, des disques qui rebondissent sur le mur de l'arène pour pousser les autres dans le vide,
+des plateformes sur trois étages au-dessus du vide, des disques qui rebondissent sur le mur de l'arène pour pousser les autres dans le vide,
 et un décapiteur.
 
 ## Lancer
@@ -20,7 +20,7 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | Espace | sauter : par-dessus un disque, ou pour lancer à hauteur de cou |
 | Clic gauche | disque : pousse la cible, rebondit 3 fois puis revient |
 | Clic droit | décapiteur : prend les 3 disques, tue d'un coup |
-| Tremplin vert | propulse vers une autre plateforme |
+| Tremplin vert | propulse vers une autre plateforme, et seul moyen de monter d'un étage ; on redescend en sautant dans le vide vers la plateforme d'en dessous |
 | Mur à liseré rose | abri : arrête les joueurs et renvoie les disques lancés à plat ; on saute par-dessus, et un disque lancé en sautant passe au-dessus |
 | M ou 🔊 | couper le son |
 
@@ -29,6 +29,11 @@ et un annonceur à la Unreal Tournament, d'une autre voix, grave et traînante, 
 premier sang, doublé, triplé, massacre… (les points de bonus s'affichent mais ne sont pas dits). Chaque victime d'affilée sans mourir rapporte 1 point de plus
 (3 au plus), faire tomber le meneur, qui porte une couronne, 2 points de plus.
 Chaque exploit s'affiche 2 s au milieu de l'écran, avec la carte du joueur.
+
+Les disques volent à plat : d'un étage à l'autre, on ne se touche pas, sauf en lançant depuis un saut vers l'étage du dessus.
+Les plateformes du haut sont fines : un disque lancé d'en bas passe dessous. Le radar, en bas à droite, tourne avec le joueur
+(devant = en haut) : les plateformes au liseré de leur étage, les autres joueurs à leur couleur, plus petits à l'étage du dessous,
+cerclés de blanc à celui du dessus, d'or pour le meneur.
 
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
 Une partie se joue en chacun pour soi : une décapitation vaut 5 points, éjecter quelqu'un dans le vide 1 point
