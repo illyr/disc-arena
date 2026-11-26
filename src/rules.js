@@ -25,6 +25,9 @@ export const DISC_RADIUS = 0.32;
 // Cover: chest high, so that a flat disc bounces off it while one thrown from a jump flies over.
 export const WALL_HEIGHT = 2;
 export const WALL_THICKNESS = 0.4;
+// The booster on the towers: the discs of whoever takes it are GIANT times as wide, for BOOST_TIME seconds.
+export const GIANT = 10;
+export const BOOST_TIME = 60;
 
 // Three floors, none above another: the center and four platforms on the axes on the ground, four on the
 // diagonals one floor up, four towers on the axes two floors up, near the wall. Going down: a jump off the
@@ -141,10 +144,12 @@ export function knock(b, dir) {
 }
 
 // The decapitator takes the three discs and bounces once; a plain disc takes one and bounces three times.
-export function newDisc(owner, from, dir, decap) {
+// size: how many times wider than a plain disc.
+export function newDisc(owner, from, dir, decap, size = 1) {
   return {
     owner,
     decap,
+    size,
     cost: decap ? MAX_DISCS : 1,
     bounces: decap ? 1 : 3,
     age: 0,
@@ -169,13 +174,14 @@ export function stepDisc(d, home, dt) {
   d.pos.y += d.vel.y * dt;
   d.pos.z += d.vel.z * dt;
   const r = Math.hypot(d.pos.x, d.pos.z);
-  if (!d.returning && r > ARENA_RADIUS) {
+  const edge = ARENA_RADIUS - DISC_RADIUS * (d.size - 1); // a giant disc bounces on its rim, too
+  if (!d.returning && r > edge) {
     const nx = d.pos.x / r, nz = d.pos.z / r;
     const dot = d.vel.x * nx + d.vel.z * nz;
     d.vel.x -= 2 * dot * nx;
     d.vel.z -= 2 * dot * nz;
-    d.pos.x = nx * ARENA_RADIUS;
-    d.pos.z = nz * ARENA_RADIUS;
+    d.pos.x = nx * edge;
+    d.pos.z = nz * edge;
     if (--d.bounces < 0) d.returning = true;
   }
   if (!d.returning) bounceOffWalls(d);
@@ -183,12 +189,12 @@ export function stepDisc(d, home, dt) {
 
 // A disc that reaches a wall, or crossed it during the frame, bounces back to the side it came from.
 function bounceOffWalls(d) {
-  const reach = WALL_THICKNESS / 2 + DISC_RADIUS;
+  const radius = DISC_RADIUS * d.size, reach = WALL_THICKNESS / 2 + radius;
   for (const w of WALLS) {
     if (d.pos.y < w.y || d.pos.y >= w.y + WALL_HEIGHT) continue;
     const a = wallLocal(d.prev, w), b = wallLocal(d.pos, w);
     const crossed = Math.sign(a.v) !== Math.sign(b.v);
-    if (Math.abs(b.u) > w.half + DISC_RADIUS || (!crossed && Math.abs(b.v) >= reach)) continue;
+    if (Math.abs(b.u) > w.half + radius || (!crossed && Math.abs(b.v) >= reach)) continue;
     const side = Math.sign(a.v) || 1;
     const nx = -w.az * side, nz = w.ax * side; // the wall's normal, toward the side the disc came from
     const dot = d.vel.x * nx + d.vel.z * nz;
@@ -211,10 +217,11 @@ export function segmentHits(a, b, c, radius) {
 }
 
 // Where a disc's move in one frame hits a player: null, "body", or "neck" (the long neck and the head).
-export function hitZone(a, b, body) {
+// size: the disc's, a giant one hits further from its line.
+export function hitZone(a, b, body, size = 1) {
   const y = (a.y + b.y) / 2 - body.pos.y;
   if (y < 0 || y > HEAD_TOP) return null;
   const flat = (p) => ({ x: p.x, y: 0, z: p.z });
-  if (!segmentHits(flat(a), flat(b), flat(body.pos), HIT_RADIUS)) return null;
+  if (!segmentHits(flat(a), flat(b), flat(body.pos), HIT_RADIUS + DISC_RADIUS * (size - 1))) return null;
   return y >= NECK_BOTTOM ? "neck" : "body";
 }

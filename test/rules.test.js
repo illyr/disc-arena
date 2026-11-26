@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ARENA_RADIUS, CHEST, DISC_SPEED, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
+  ARENA_RADIUS, CHEST, GIANT, DISC_SPEED, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
   hitZone, knock, newBody, newDisc, platformUnder, segmentHits, stepBody, stepDisc,
 } from "../src/rules.js";
 
@@ -129,4 +129,11 @@ test("a running jump does not reach the floor above", () => {
     for (let i = 0; i < 120; i++) stepBody(b, toward, false, DT);
     assert.ok(b.pos.y < 0 && !b.onGround, "falls into the void");
   }
+});
+
+test("a giant disc hits a player a plain disc flies past", () => {
+  const body = newBody({ x: 0, y: 0, z: 0 });
+  const a = { x: -1, y: CHEST, z: 2.5 }, b = { x: 1, y: CHEST, z: 2.5 };
+  assert.equal(hitZone(a, b, body), null);
+  assert.equal(hitZone(a, b, body, GIANT), "body");
 });
