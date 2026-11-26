@@ -5,8 +5,11 @@ import {
 } from "./rules.js";
 import { hostRoom, joinRoom, newRoomCode } from "./net.js";
 
-const NAMES = ["Joueur 1", "Alpha", "Bravo", "Charlie"];
-const COLORS = [0x4fc3f7, 0xff7043, 0x9ccc65, 0xba68c8];
+const NAMES = ["Joueur 1", "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"];
+const COLORS = [0x4fc3f7, 0xff7043, 0x9ccc65, 0xba68c8, 0xffee58, 0x26a69a, 0xf06292, 0xbdbdbd];
+const POINTS = { decap: 5, fall: 1 }; // a fall nobody pushed scores nothing
+const WIN_SCORE = 20;
+const MATCH_PAUSE = 6; // seconds the winner stays on screen before the next match
 const RESPAWN_DELAY = 2.5;
 const DECAP_RESPAWN_DELAY = 5; // long enough to watch the geyser
 const BLAME_WINDOW = 6; // seconds a push still counts as the kill of whoever threw it
@@ -95,11 +98,19 @@ function makeAvatar(color) {
   return { group, head };
 }
 
+const params = new URLSearchParams(location.search);
+const joining = params.get("room"); // a code: join that room; none: host one
+// No bots unless asked (?bots=3): the free slots wait for players. A guest knows the slots from the host.
+const BOTS = joining ? 0 : Math.min(Number(params.get("bots")) || 0, NAMES.length - 1);
 const entities = NAMES.map((name, i) => ({
-  name, color: COLORS[i], bot: i > 0, kills: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, ...makeAvatar(COLORS[i]),
+  name, color: COLORS[i], bot: i > 0 && i <= BOTS, empty: !!joining || i > BOTS,
+  score: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, ...makeAvatar(COLORS[i]),
 }));
+entities.forEach((e) => (e.group.visible = !e.empty));
 let me = entities[0]; // a guest learns its slot from the host's first state
-const joining = new URLSearchParams(location.search).get("room"); // a code: join that room; none: host one
+let winner = null; // the host's winner of the match, until the next one starts
+let nextMatchAt = 0;
+let winnerText = "";
 const discs = [];
 const drops = [];
 const flyingHeads = [];
@@ -130,10 +141,18 @@ function resetAvatar(e) {
   e.group.visible = e !== me;
   const i = flyingHeads.findIndex((h) => h.owner === e);
   if (i >= 0) flyingHeads.splice(i, 1);
-  if (e === me) banner("");
+  if (e === me) banner(winnerText);
   renderScores();
 }
-if (!joining) entities.forEach(spawn);
+if (!joining) entities.filter((e) => !e.empty).forEach(spawn);
+
+// A slot a player left: nobody there, nothing of it left in the arena.
+function vacate(e) {
+  Object.assign(e, { empty: true, bot: false, conn: null, alive: false });
+  discs.filter((d) => d.owner === e).forEach(removeDisc);
+  resetAvatar(e);
+  e.group.visible = false;
+}
 
 // Discs.
 const discGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.05, 24);
@@ -191,9 +210,28 @@ function kill(e, killer, how, dir) {
   e.alive = false;
   e.respawnAt = now + (how === "decap" ? DECAP_RESPAWN_DELAY : RESPAWN_DELAY);
   discs.filter((d) => d.owner === e).forEach(removeDisc);
-  if (killer) killer.kills++;
+  if (killer && !winner) killer.score += POINTS[how];
   Object.assign(e, { how, killer, dir: { x: dir?.x ?? 0, z: dir?.z ?? 0 } });
   showDeath(e, killer, how, e.dir);
+  if (killer && !winner && killer.score >= WIN_SCORE) {
+    winner = killer;
+    nextMatchAt = now + MATCH_PAUSE;
+    showWinner(winner);
+  }
+}
+
+function newMatch() {
+  winner = null;
+  showWinner(null);
+  [...discs].forEach(removeDisc);
+  for (const e of entities) if (!e.empty) spawn(Object.assign(e, { score: 0 }));
+}
+
+const winText = (e) => e ? `${e.name} a gagné la partie !` : "";
+function showWinner(e) {
+  winnerText = winText(e);
+  banner(winnerText);
+  if (e) feed(winnerText);
 }
 
 function showDeath(e, killer, how, dir) {
@@ -459,9 +497,12 @@ function feed(text) {
 }
 function renderScores() {
   $("scores").innerHTML = "";
-  for (const e of [...entities].sort((a, b) => b.kills - a.kills)) {
+  const title = document.createElement("div");
+  title.textContent = `Premier à ${WIN_SCORE} points`;
+  $("scores").append(title);
+  for (const e of entities.filter((o) => !o.empty).sort((a, b) => b.score - a.score)) {
     const line = document.createElement("div");
-    line.textContent = `${e === me ? "▶ " : ""}${e.name}  ${e.kills}`;
+    line.textContent = `${e === me ? "▶ " : ""}${e.name}  ${e.score}`;
     line.style.color = `#${e.color.toString(16).padStart(6, "0")}`;
     $("scores").append(line);
   }
@@ -470,26 +511,27 @@ function renderScores() {
 // The network. The host runs the game and sends its state 30 times a second. A guest moves its own
 // player, sends where it is and how many discs it threw, and shows the rest as the host says.
 const SEND_EVERY = 1 / 30;
-const GUEST_TIMEOUT = 5000; // ms without news before a guest's slot goes back to a bot
+const GUEST_TIMEOUT = 5000; // ms without news before a guest's slot is freed
 let sendIn = 0;
 let host = null; // a guest's connection to the host
 
 function hostState() {
   return {
-    ents: entities.map((e) => ({
+    ents: entities.map((e) => e.empty ? null : {
       name: e.name, x: e.body.pos.x, y: e.body.pos.y, z: e.body.pos.z, yaw: e.yaw,
-      alive: e.alive, life: e.life, discs: e.discs, kills: e.kills,
+      alive: e.alive, life: e.life, discs: e.discs, score: e.score,
       knocks: e.knocks, kx: e.knockDir.x, kz: e.knockDir.z,
       how: e.how, killer: entities.indexOf(e.killer), dx: e.dir?.x ?? 0, dz: e.dir?.z ?? 0,
-    })),
+    }),
     discs: discs.map((d) => [d.pos.x, d.pos.y, d.pos.z, d.decap ? 1 : 0, entities.indexOf(d.owner)]),
+    winner: entities.indexOf(winner),
   };
 }
 
 function guestJoins(conn) {
-  const e = entities.find((o) => o.bot);
+  const e = entities.find((o) => o.empty);
   if (!e) return conn.close(); // full
-  Object.assign(e, { bot: false, conn, name: `Joueur ${entities.indexOf(e) + 1}`, kills: 0, throws: 0, decaps: 0 });
+  Object.assign(e, { empty: false, conn, name: `Joueur ${entities.indexOf(e) + 1}`, score: 0, throws: 0, decaps: 0 });
   e.seenAt = performance.now();
   spawn(e);
   feed(`${e.name} a rejoint la partie`);
@@ -498,10 +540,9 @@ function guestJoins(conn) {
 function guestLeaves(conn) {
   const e = entities.find((o) => o.conn === conn);
   if (!e) return;
-  feed(`${e.name} est parti, un bot le remplace`);
-  Object.assign(e, { bot: true, conn: null, name: NAMES[entities.indexOf(e)] });
+  feed(`${e.name} est parti`);
+  vacate(e);
   conn.close();
-  renderScores();
 }
 
 function guestSays(conn, msg) {
@@ -524,7 +565,11 @@ function guestHears(s) {
   }
   s.ents.forEach((n, i) => {
     const e = entities[i];
-    Object.assign(e, { name: n.name, kills: n.kills, discs: n.discs });
+    if (!n) {
+      if (!e.empty) vacate(e);
+      return;
+    }
+    Object.assign(e, { empty: false, name: n.name, score: n.score, discs: n.discs });
     if (n.life !== e.life) {
       Object.assign(e, { life: n.life, alive: true, body: newBody(n), yaw: n.yaw, knocks: n.knocks });
       resetAvatar(e);
@@ -543,7 +588,9 @@ function guestHears(s) {
       showDeath(e, entities[n.killer] ?? null, n.how, { x: n.dx, z: n.dz });
     }
   });
-  const key = s.ents.map((n) => n.name + n.kills).join();
+  const won = entities[s.winner];
+  if (winText(won) !== winnerText) showWinner(won);
+  const key = s.ents.map((n) => n && n.name + n.score).join();
   if (key !== scoresKey) {
     scoresKey = key;
     renderScores();
@@ -572,7 +619,9 @@ function showDiscs(list) {
 }
 
 function hostFrame(dt) {
+  if (winner && now > nextMatchAt) newMatch();
   for (const e of entities) {
+    if (e.empty) continue;
     if (e.alive) {
       if (!e.conn) {
         const { wish, jump } = e.bot ? think(e) : playerInput();
@@ -601,7 +650,7 @@ function hostFrame(dt) {
 function guestFrame(dt) {
   const smooth = 1 - Math.exp(-15 * dt); // eases the others between two states of the host
   for (const e of entities) {
-    if (!e.body) continue;
+    if (e.empty || !e.body) continue;
     if (e === me) {
       const { wish, jump } = e.alive ? playerInput() : { wish: STILL, jump: false };
       stepBody(e.body, wish, jump, dt);

@@ -23,18 +23,20 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | Pad vert | propulse vers une autre plateforme |
 
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
-Trois bots jouent en chacun pour soi. Tomber sous la plateforme après un coup compte comme un kill pour le lanceur.
+Une partie se joue en chacun pour soi : une décapitation vaut 5 points, éjecter quelqu'un dans le vide 1 point
+(tomber sans avoir été poussé ne rapporte rien). Le premier à 20 points gagne, et une nouvelle partie repart 6 s plus tard.
+Pas de bots par défaut ; pour s'entraîner seul : `?bots=3` (jusqu'à 7).
 
 ## Code
 
 - `src/rules.js` : les règles (mouvement, pads, disques, collisions), sans Three.js.
-- `src/main.js` : le rendu, les bots, le joueur, le gore et le HUD.
+- `src/main.js` : le rendu, les bots, le joueur, le gore, les parties et le HUD.
 - `test/rules.test.js` : `npm test` (node --test).
 
 ## Multijoueur
 
 Le premier qui ouvre la page héberge une room : son code et le lien à partager s'affichent en bas à droite.
-Les autres ouvrent ce lien (`…/?room=CODE`) et prennent la place d'un bot ; quand ils partent, un bot reprend leur place.
+Les autres ouvrent ce lien (`…/?room=CODE`) et prennent une place libre, jusqu'à 8 joueurs ; quand ils partent, leur place se libère.
 
 - Les navigateurs se parlent en pair-à-pair (WebRTC). Le serveur public PeerJS (0.peerjs.com) ne sert qu'à les présenter.
 - L'hôte calcule les disques, les touches et les morts ; chaque joueur calcule ses propres déplacements et les envoie.
