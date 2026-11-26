@@ -476,6 +476,7 @@ function showDeath(e, killer, how, dir, shout) {
   const lines = how === "decap" ? DECAP_LINES : killer ? PUSH_LINES : FALL_LINES;
   // Picked from the death count, so that every player reads the same line.
   feed(lines[(e.life + entities.indexOf(e)) % lines.length], { "{K}": killer, "{V}": e }, shout);
+  if (shout) splash(killer ?? e, shout); // the exploit's author, or the one humiliated
   if (e === me) {
     me.group.visible = true;
     banner(how === "decap" ? `Décapité par ${killer.alias}` : killer ? `Éjecté par ${killer.alias}` : "Tu es tombé");
@@ -849,6 +850,24 @@ function roar() {
     voice.start(start);
     voice.stop(end);
   }
+}
+
+// An exploit across the screen for 2 s: the player's card, their alias, the shout.
+function splash(who, shout) {
+  const card = document.createElement("div");
+  card.className = "splash";
+  card.style.setProperty("--color", css(who.color));
+  const portrait = new Image();
+  portrait.src = who.portrait;
+  portrait.alt = "";
+  const alias = document.createElement("b");
+  alias.textContent = who.alias;
+  const cry = document.createElement("div");
+  cry.textContent = shout;
+  card.append(portrait, alias, cry);
+  document.querySelector(".splash")?.remove();
+  document.body.append(card);
+  setTimeout(() => card.remove(), 2000);
 }
 
 // A line in the top-left corner; an event names its players, {K} and {V}, in their colours.

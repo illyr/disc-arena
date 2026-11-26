@@ -28,6 +28,7 @@ Un arbitre très sérieux annonce à voix haute chaque mort, le début et la fin
 et un annonceur à la Unreal Tournament, d'une autre voix, grave et traînante, crie les exploits :
 premier sang, doublé, triplé, massacre… (les points de bonus s'affichent mais ne sont pas dits). Chaque victime d'affilée sans mourir rapporte 1 point de plus
 (3 au plus), faire tomber le meneur, qui porte une couronne, 2 points de plus.
+Chaque exploit s'affiche 2 s au milieu de l'écran, avec la carte du joueur.
 
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
 Une partie se joue en chacun pour soi : une décapitation vaut 5 points, éjecter quelqu'un dans le vide 1 point
