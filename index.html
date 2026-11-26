@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Disc Arena</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #07060f; font-family: system-ui, sans-serif; color: #eee; }
+    canvas { display: block; }
+    #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: #fff; }
+    #discs { position: fixed; left: 24px; bottom: 20px; font-size: 32px; letter-spacing: 6px; }
+    #scores { position: fixed; right: 20px; top: 16px; text-align: right; line-height: 1.5; }
+    #feed { position: fixed; left: 20px; top: 16px; line-height: 1.5; }
+    #banner { position: fixed; top: 30%; width: 100%; text-align: center; font-size: 36px; color: #ff1744; text-shadow: 0 0 12px #000; }
+    #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #07060fcc; cursor: pointer; text-align: center; }
+    #start h1 { font-size: 56px; margin: 0 0 12px; }
+    #room { position: fixed; right: 20px; bottom: 16px; z-index: 1; max-width: 60%; text-align: right; user-select: text; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="crosshair"></div>
+  <div id="discs"></div>
+  <div id="scores"></div>
+  <div id="feed"></div>
+  <div id="banner"></div>
+  <div id="room"></div>
+  <div id="start">
+    <h1>Disc Arena</h1>
+    <p>Clique pour jouer — Échap pour sortir</p>
+    <p>ZQSD / WASD : bouger · Espace : sauter · Souris : viser</p>
+    <p>Clic gauche : disque (pousse dans le vide) · Clic droit : décapiteur (les 3 disques)</p>
+    <p>Les pads verts te propulsent vers une autre plateforme.</p>
+  </div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
