@@ -976,6 +976,14 @@ function playerInput() {
   return { wish: { x: x / len, z: z / len }, jump: keys.has("Space") };
 }
 
+// The wheel steps the view out behind me, up to about half the arena in sight; all the way in, through my eyes again.
+const MAX_ZOOM = 20;
+const ZOOM_TILT = 0.5; // rad the view looks down, all the way back
+let zoom = 0;
+addEventListener("wheel", (ev) => {
+  if (locked) zoom = Math.min(MAX_ZOOM, Math.max(0, zoom + ev.deltaY * 0.01));
+}, { passive: true });
+
 function updateCamera() {
   const flying = flyingHeads.find((h) => h.owner === me);
   if (flying) {
@@ -986,8 +994,16 @@ function updateCamera() {
     camera.lookAt(at.x, at.y + 1.5, at.z);
     return;
   }
-  camera.position.set(me.body.pos.x, me.body.pos.y + EYE, me.body.pos.z);
-  camera.rotation.set(me.pitch, me.yaw, 0);
+  if (me.alive) me.group.visible = zoom > 0;
+  // Further back, the view also looks down, over the platforms, with me still in its middle; it stays inside the stands.
+  // shortcut: the camera still goes through a platform or a cover right behind me; push it in front if it bothers players.
+  const pitch = me.pitch - ZOOM_TILT * (zoom / MAX_ZOOM);
+  const back = (d) => new THREE.Vector3(Math.sin(me.yaw) * Math.cos(pitch) * d, EYE - Math.sin(pitch) * d, Math.cos(me.yaw) * Math.cos(pitch) * d)
+    .add(me.body.pos);
+  let d = zoom;
+  while (d > 0 && Math.hypot(back(d).x, back(d).z) > ARENA_RADIUS - 1) d -= 0.5;
+  camera.position.copy(back(Math.max(d, 0)));
+  camera.rotation.set(pitch, me.yaw, 0);
 }
 
 // The HUD.

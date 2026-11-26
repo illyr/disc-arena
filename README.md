@@ -22,6 +22,7 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | Clic droit | décapiteur : prend les 3 disques, tue d'un coup |
 | Tremplin vert | propulse vers une autre plateforme, et seul moyen de monter d'un étage ; on redescend en sautant dans le vide vers la plateforme d'en dessous |
 | Mur à liseré rose | abri : arrête les joueurs et renvoie les disques lancés à plat ; on saute par-dessus, et un disque lancé en sautant passe au-dessus |
+| Molette | recule la vue derrière soi, à la 3e personne, jusqu'à voir la moitié de l'arène ; à fond vers l'avant, on revient dans ses yeux |
 | M ou 🔊 | couper le son |
 
 Un arbitre très sérieux annonce à voix haute chaque mort, le début et la fin des parties (synthèse vocale du navigateur),
