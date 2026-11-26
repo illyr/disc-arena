@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ARENA_RADIUS, CHEST, GIANT, DISC_SPEED, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
+  ARENA_RADIUS, CHEST, FAT, GIANT, DISC_SPEED, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
   hitZone, knock, newBody, newDisc, platformUnder, segmentHits, stepBody, stepDisc,
 } from "../src/rules.js";
 
@@ -136,4 +136,14 @@ test("a giant disc hits a player a plain disc flies past", () => {
   const a = { x: -1, y: CHEST, z: 2.5 }, b = { x: 1, y: CHEST, z: 2.5 };
   assert.equal(hitZone(a, b, body), null);
   assert.equal(hitZone(a, b, body, GIANT), "body");
+});
+
+test("a fat player is hit far from a disc's line, and from the floor above", () => {
+  const body = newBody({ x: 0, y: 0, z: 0 });
+  const a = { x: -1, y: CHEST, z: 2 }, b = { x: 1, y: CHEST, z: 2 };
+  assert.equal(hitZone(a, b, body), null);
+  assert.equal(hitZone(a, b, body, 1, FAT), "body");
+  const above = { x: -1, y: LEVEL + CHEST, z: 0 }, past = { x: 1, y: LEVEL + CHEST, z: 0 };
+  assert.equal(hitZone(above, past, body), null);
+  assert.equal(hitZone(above, past, body, 1, FAT), "body");
 });

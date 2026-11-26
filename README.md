@@ -32,10 +32,12 @@ Chaque exploit s'affiche 2 s au milieu de l'écran, avec la carte du joueur.
 
 Les disques volent à plat : d'un étage à l'autre, on ne se touche pas, sauf en lançant depuis un saut vers l'étage du dessus.
 Les plateformes du haut sont fines : un disque lancé d'en bas passe dessous. Le radar, en bas à droite, tourne avec le joueur
-(devant = en haut) : les plateformes au liseré de leur étage, les autres joueurs à leur couleur, plus petits à l'étage du dessous,
+(devant = en haut) : les plateformes au liseré de leur étage, les autres joueurs à leur couleur avec leur alias, plus petits à l'étage du dessous,
 cerclés de blanc à celui du dessus, d'or pour le meneur.
 Sur une des tours du dernier étage, un booster doré, signalé par une colonne de lumière et une ★ sur le radar :
-qui le prend lance des disques 10 fois plus larges pendant 60 s (perdu à la mort) ; il revient 30 s plus tard sur une tour au hasard.
+qui le prend lance des disques 10 fois plus larges pendant 60 s (perdu à la mort) ; il revient 30 s plus tard sur une tour au hasard. On ne réapparaît jamais sur une tour.
+Au pied de chaque tremplin qui monte du sol, à côté de l'abri, un malus violet (✖ sur le radar) : qui passe dessus devient
+4 fois plus grand pendant 10 s, donc facile à toucher, même depuis l'étage du dessus ; il revient 20 s plus tard.
 
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
 Une partie se joue en chacun pour soi : une décapitation vaut 5 points, éjecter quelqu'un dans le vide 1 point

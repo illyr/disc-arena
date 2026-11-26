@@ -28,6 +28,9 @@ export const WALL_THICKNESS = 0.4;
 // The booster on the towers: the discs of whoever takes it are GIANT times as wide, for BOOST_TIME seconds.
 export const GIANT = 10;
 export const BOOST_TIME = 60;
+// The maluses: whoever takes one is FAT times bigger every way for FAT_TIME seconds, an easy target.
+export const FAT = 4;
+export const FAT_TIME = 10;
 
 // Three floors, none above another: the center and four platforms on the axes on the ground, four on the
 // diagonals one floor up, four towers on the axes two floors up, near the wall. Going down: a jump off the
@@ -217,11 +220,11 @@ export function segmentHits(a, b, c, radius) {
 }
 
 // Where a disc's move in one frame hits a player: null, "body", or "neck" (the long neck and the head).
-// size: the disc's, a giant one hits further from its line.
-export function hitZone(a, b, body, size = 1) {
-  const y = (a.y + b.y) / 2 - body.pos.y;
+// size: the disc's, a giant one hits further from its line. scale: the body's, a fat one is hit higher and wider.
+export function hitZone(a, b, body, size = 1, scale = 1) {
+  const y = ((a.y + b.y) / 2 - body.pos.y) / scale;
   if (y < 0 || y > HEAD_TOP) return null;
   const flat = (p) => ({ x: p.x, y: 0, z: p.z });
-  if (!segmentHits(flat(a), flat(b), flat(body.pos), HIT_RADIUS + DISC_RADIUS * (size - 1))) return null;
+  if (!segmentHits(flat(a), flat(b), flat(body.pos), HIT_RADIUS * scale + DISC_RADIUS * (size - 1))) return null;
   return y >= NECK_BOTTOM ? "neck" : "body";
 }

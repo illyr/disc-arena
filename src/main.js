@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import {
-  ARENA_RADIUS, BOOST_TIME, CHEST, DISC_SPEED, GIANT, FALL_DEATH_Y, GRAVITY, LEVEL, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
+  ARENA_RADIUS, BOOST_TIME, CHEST, DISC_SPEED, FAT, FAT_TIME, GIANT, FALL_DEATH_Y, GRAVITY, LEVEL, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
   WALLS, WALL_HEIGHT, WALL_THICKNESS,
   chest, hitZone, knock, newBody, newDisc, platformUnder, stepBody, stepDisc,
 } from "./rules.js";
@@ -332,11 +332,12 @@ let slowUntil = 0; // performance.now() until which a decapitation plays in slow
 // The host puts a player back on a free platform; its guests follow from the states it sends.
 function spawn(e) {
   const taken = (pl) => entities.some((o) => o !== e && o.alive && platformUnder(o.body.pos) === pl);
-  const free = PLATFORMS.filter((pl) => !taken(pl));
-  const pl = (free.length ? free : PLATFORMS)[Math.floor(Math.random() * (free.length || PLATFORMS.length))];
+  const low = PLATFORMS.filter((pl) => pl.y < 2 * LEVEL); // not on a tower, where the booster waits
+  const free = low.filter((pl) => !taken(pl));
+  const pl = (free.length ? free : low)[Math.floor(Math.random() * (free.length || low.length))];
   Object.assign(e, {
     body: newBody(pl), alive: true, life: e.life + 1, discs: MAX_DISCS, yaw: Math.atan2(pl.x, pl.z), pitch: 0,
-    lastHitBy: null, lastHitAt: 0, giantUntil: 0, ai: { throwAt: now + 1 + Math.random(), shotAt: 0, turnAt: 0, strafe: 0 },
+    lastHitBy: null, lastHitAt: 0, giantUntil: 0, fatUntil: 0, ai: { throwAt: now + 1 + Math.random(), shotAt: 0, turnAt: 0, strafe: 0 },
   });
   resetAvatar(e);
 }
@@ -398,7 +399,7 @@ function updateDiscs(dt) {
       }
     } else {
       let zone = null;
-      const victim = entities.find((v) => v !== d.owner && v.alive && (zone = hitZone(d.prev, d.pos, v.body, d.size)));
+      const victim = entities.find((v) => v !== d.owner && v.alive && (zone = hitZone(d.prev, d.pos, v.body, d.size, now < v.fatUntil ? FAT : 1)));
       if (victim) {
         d.returning = true;
         if (d.decap || zone === "neck") {
@@ -437,23 +438,48 @@ beam.position.y = 15;
 booster.add(boostDisc, beam);
 scene.add(booster);
 
-function updateBoost() {
+// The maluses: on the ground ring, half way from where the pad from the center lands to the pad that goes
+// up, beside the cover: whoever rushes up grows FAT times bigger. Each comes back MALUS_RESPAWN s after.
+const MALUS_RESPAWN = 20;
+const malusGeo = new THREE.IcosahedronGeometry(0.6);
+const maluses = PADS.filter((p) => p.y === 0 && PLATFORMS[p.to].y === LEVEL).map((p) => {
+  const pl = platformUnder(p);
+  const mesh = new THREE.Mesh(malusGeo, glow(0xd500f9, 1.5));
+  scene.add(mesh);
+  return { x: (p.x + pl.x) / 2, y: 0, z: (p.z + pl.z) / 2, backAt: 0, mesh };
+});
+
+const standing = (spot, reach) => entities.find((e) => !e.empty && e.alive && Math.abs(e.body.pos.y - spot.y) < 0.5 &&
+  Math.hypot(e.body.pos.x - spot.x, e.body.pos.z - spot.z) < reach);
+
+// The host hands out the booster and the maluses.
+function updatePickups() {
   if (!boostAt && now > boostBackAt) boostAt = TOWERS[Math.floor(Math.random() * TOWERS.length)];
-  if (!boostAt) return;
-  const taker = entities.find((e) => !e.empty && e.alive && Math.abs(e.body.pos.y - boostAt.y) < 0.5 &&
-    Math.hypot(e.body.pos.x - boostAt.x, e.body.pos.z - boostAt.z) < 1.5);
-  if (!taker) return;
-  taker.giantUntil = now + BOOST_TIME;
-  boostAt = null;
-  boostBackAt = now + BOOST_RESPAWN;
-  feed("{K} a pris les disques géants", { "{K}": taker });
+  const taker = boostAt && standing(boostAt, 1.5);
+  if (taker) {
+    taker.giantUntil = now + BOOST_TIME;
+    boostAt = null;
+    boostBackAt = now + BOOST_RESPAWN;
+    feed("{K} a pris les disques géants", { "{K}": taker });
+  }
+  for (const m of maluses) {
+    const fat = now >= m.backAt && standing(m, 1);
+    if (!fat) continue;
+    fat.fatUntil = now + FAT_TIME;
+    m.backAt = now + MALUS_RESPAWN;
+    feed("{K} est devenu énorme", { "{K}": fat });
+  }
 }
 
-function showBoost(dt) {
+function showPickups(dt) {
   booster.visible = !!boostAt;
-  if (!boostAt) return;
-  booster.position.set(boostAt.x, boostAt.y, boostAt.z);
+  if (boostAt) booster.position.set(boostAt.x, boostAt.y, boostAt.z);
   booster.rotation.y += 3 * dt; // the beam is round: only the disc shows it turning
+  for (const m of maluses) {
+    m.mesh.visible = now >= m.backAt;
+    m.mesh.position.set(m.x, 1 + 0.3 * Math.sin(now * 4), m.z);
+    m.mesh.rotation.y += 2 * dt;
+  }
 }
 
 // Deaths, and the gore that comes with a decapitation: the host decides them, everyone shows them.
@@ -920,7 +946,7 @@ function splash(who, shout) {
 // The radar: the arena seen from above, turning with the player so that ahead is up. The floors by
 // the colour of their rim, the players in their colours, smaller on a floor below, ringed on one above.
 const radar = $("radar").getContext("2d");
-const RADAR = 260; // half the canvas, which is twice its size on the page for sharp screens
+const RADAR = 300; // half the canvas, which is twice its size on the page for sharp screens
 const RADAR_SCALE = (RADAR - 10) / ARENA_RADIUS; // pixels a unit
 function drawRadar() {
   const f = forward(me.yaw), at = me.body?.pos ?? { x: 0, y: 0, z: 0 };
@@ -940,13 +966,16 @@ function drawRadar() {
     radar.fill();
     radar.stroke();
   }
+  radar.textAlign = "center";
+  radar.textBaseline = "middle";
   if (boostAt) {
     radar.fillStyle = "#ffd700";
     radar.font = "bold 40px system-ui";
-    radar.textAlign = "center";
-    radar.textBaseline = "middle";
     radar.fillText("★", ...spot(boostAt));
   }
+  radar.fillStyle = "#d500f9";
+  radar.font = "bold 30px system-ui";
+  for (const m of maluses) if (now >= m.backAt) radar.fillText("✖", ...spot(m));
   const top = leader();
   for (const e of entities) {
     if (e.empty || !e.alive || !e.body || e === me) continue;
@@ -959,6 +988,13 @@ function drawRadar() {
     radar.lineWidth = 5;
     radar.strokeStyle = e === top ? "#ffd700" : floor > 0 ? "#fff" : "#000";
     radar.stroke();
+    // The alias above the dot, outlined to read over the platforms.
+    radar.font = "bold 26px system-ui";
+    radar.textBaseline = "bottom";
+    radar.lineWidth = 6;
+    radar.strokeStyle = "#000";
+    radar.strokeText(e.alias, x, y - 18);
+    radar.fillText(e.alias, x, y - 18);
   }
   radar.restore();
   // The player, in the middle, pointing up.
@@ -1063,12 +1099,13 @@ function hostState() {
   return {
     ents: entities.map((e) => e.empty ? null : {
       name: e.name, alias: e.alias, bot: e.bot, x: e.body.pos.x, y: e.body.pos.y, z: e.body.pos.z, yaw: e.yaw,
-      alive: e.alive, life: e.life, discs: e.discs, score: e.score, giant: Math.max(0, e.giantUntil - now),
+      alive: e.alive, life: e.life, discs: e.discs, score: e.score, giant: Math.max(0, e.giantUntil - now), fat: Math.max(0, e.fatUntil - now),
       knocks: e.knocks, kx: e.knockDir.x, kz: e.knockDir.z,
       how: e.how, shout: e.shout, killer: entities.indexOf(e.killer), dx: e.dir?.x ?? 0, dz: e.dir?.z ?? 0,
     }),
     discs: discs.map((d) => [d.pos.x, d.pos.y, d.pos.z, d.decap ? 1 : 0, entities.indexOf(d.owner), d.size]),
     boost: PLATFORMS.indexOf(boostAt),
+    maluses: maluses.map((m) => now >= m.backAt),
     winner: entities.indexOf(winner),
     match: inMatch,
   };
@@ -1120,7 +1157,7 @@ function guestHears(s) {
       if (!e.empty) vacate(e);
       return;
     }
-    Object.assign(e, { empty: false, name: n.name, alias: n.alias, bot: n.bot, score: n.score, discs: n.discs, giantUntil: now + n.giant });
+    Object.assign(e, { empty: false, name: n.name, alias: n.alias, bot: n.bot, score: n.score, discs: n.discs, giantUntil: now + n.giant, fatUntil: now + n.fat });
     if (n.life !== e.life) {
       Object.assign(e, { life: n.life, alive: true, body: newBody(n), yaw: n.yaw, pitch: 0, knocks: n.knocks });
       resetAvatar(e);
@@ -1149,6 +1186,7 @@ function guestHears(s) {
   }
   showDiscs(s.discs);
   boostAt = PLATFORMS[s.boost] ?? null;
+  maluses.forEach((m, i) => (m.backAt = s.maluses[i] ? 0 : Infinity));
 }
 
 // A guest's discs are only meshes where the host says they are.
@@ -1191,9 +1229,10 @@ function hostFrame(dt) {
     }
     e.group.position.set(e.body.pos.x, e.body.pos.y, e.body.pos.z);
     e.group.rotation.y = e.yaw;
+    e.group.scale.setScalar(now < e.fatUntil ? SCALE * FAT : SCALE);
   }
   updateDiscs(dt);
-  updateBoost();
+  updatePickups();
   for (const e of entities) if (e.conn && performance.now() - e.seenAt > GUEST_TIMEOUT) guestLeaves(e.conn);
   sendIn -= dt;
   if (sendIn > 0) return;
@@ -1217,6 +1256,7 @@ function guestFrame(dt) {
     if (!e.alive) updateCorpse(e, dt);
     e.group.position.set(e.body.pos.x, e.body.pos.y, e.body.pos.z);
     e.group.rotation.y = e.yaw;
+    e.group.scale.setScalar(now < e.fatUntil ? SCALE * FAT : SCALE);
   }
   netDiscs.forEach((mesh) => (mesh.rotation.y += 25 * dt));
   if (!host?.open || !me.body) return;
@@ -1260,12 +1300,13 @@ renderer.setAnimationLoop(() => {
   updateHeads(dt);
   updateBlood(dt);
   updateFans();
-  showBoost(dt);
+  showPickups(dt);
   drawRadar();
   pads.forEach((p) => (p.material.emissiveIntensity = 1.2 + 0.6 * Math.sin(now * 6)));
   $("discs").textContent = "●".repeat(me.discs ?? 0) + "○".repeat(MAX_DISCS - (me.discs ?? MAX_DISCS));
-  const giant = me.alive ? Math.ceil(me.giantUntil - now) : 0;
-  $("giant").textContent = giant > 0 ? `Disques géants ${giant} s` : "";
+  const left = (until) => (me.alive ? Math.ceil(until - now) : 0);
+  $("powers").textContent = [[me.giantUntil, "Disques géants"], [me.fatUntil, "Énorme : cible facile"]]
+    .filter(([until]) => left(until) > 0).map(([until, what]) => `${what} ${left(until)} s`).join(" · ");
   if (me.body) updateCamera();
   renderer.render(scene, camera);
 });

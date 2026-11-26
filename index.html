@@ -41,8 +41,8 @@
     .card img { display: block; width: 96px; height: 120px; margin: 0 auto 4px; }
     #lobby input { width: 24em; max-width: 70vw; padding: 6px; font-size: 16px; }
     #launch { margin-top: 12px; padding: 12px 28px; font-size: 22px; border: 0; border-radius: 8px; background: #76ff03; color: #07060f; cursor: pointer; }
-    #giant { position: fixed; left: 24px; bottom: 64px; font-size: 24px; font-weight: 900; color: #ffd700; text-transform: uppercase; text-shadow: 0 0 8px #ff6d00, 0 0 2px #000; }
-    #radar { position: fixed; right: 16px; bottom: 96px; width: min(260px, 40vh); height: min(260px, 40vh); border-radius: 50%; background: #000a; box-shadow: 0 0 0 2px #7c4dff88; pointer-events: none; }
+    #powers { position: fixed; left: 24px; bottom: 64px; font-size: 24px; font-weight: 900; color: #ffd700; text-transform: uppercase; text-shadow: 0 0 8px #ff6d00, 0 0 2px #000; }
+    #radar { position: fixed; right: 16px; bottom: 96px; width: min(300px, 45vh); height: min(300px, 45vh); border-radius: 50%; background: #000a; box-shadow: 0 0 0 2px #7c4dff88; pointer-events: none; }
     #room { position: fixed; right: 20px; bottom: 16px; z-index: 1; max-width: 28%; text-align: right; user-select: text; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -53,11 +53,11 @@
 <body>
   <div id="crosshair"></div>
   <div id="discs"></div>
-  <div id="giant"></div>
+  <div id="powers"></div>
   <div id="scores"></div>
   <div id="feed"></div>
   <div id="banner"></div>
-  <canvas id="radar" width="520" height="520"></canvas>
+  <canvas id="radar" width="600" height="600"></canvas>
   <div id="room"></div>
   <button id="mute" title="Couper le son (M)"></button>
   <div id="start">
@@ -66,7 +66,7 @@
     <p>ZQSD / WASD : bouger · Espace : sauter · Souris : viser · M : couper le son</p>
     <p>Clic gauche : disque (pousse dans le vide) · Clic droit : décapiteur (les 3 disques)</p>
     <p>Trois étages : les tremplins verts font monter, on redescend en sautant dans le vide vers la plateforme d'en dessous. Le radar en bas à droite montre où sont les autres.</p>
-    <p>★ Sur une tour du dernier étage, le booster doré : disques 10 fois plus gros pendant 60 s.</p>
+    <p>★ Sur une tour du dernier étage, le booster doré : disques 10 fois plus gros pendant 60 s. Gare aux malus violets au pied des tremplins qui montent : énorme, donc facile à toucher, pendant 10 s.</p>
     <p>Décapitation : 5 points · Éjection dans le vide : 1 point · Premier à 20 points</p>
     <p>Bonus : +1 par victime d'affilée sans mourir (+3 max) · +2 pour faire tomber le 👑 meneur</p>
     <div id="lobby">
