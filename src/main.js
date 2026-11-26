@@ -7,7 +7,19 @@ import { hostRoom, joinRoom, newRoomCode } from "./net.js";
 import { PSEUDOS } from "./pseudos.js";
 
 const NAMES = ["Joueur 1", "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"];
-const COLORS = [0x4fc3f7, 0xff7043, 0x9ccc65, 0xba68c8, 0xffee58, 0x26a69a, 0xf06292, 0xbdbdbd];
+// Every slot looks like no other: its colour, the pattern on its body, and its oddities
+// (eyes: their size; tail: "bushy" or "thin"). Only for show: the hit zones stay those of rules.js.
+const LOOKS = [
+  { color: 0xe53935, ink: "#fff", pattern: "dots", eyes: 3, antennas: true },
+  { color: 0x1e88e5, ink: "#fff", pattern: "stripes", ears: true, tail: "bushy" },
+  { color: 0xfdd835, ink: "#000", pattern: "checks", nose: true, eyes: 0.4 },
+  { color: 0x43a047, ink: "#ff0", pattern: "zigzag", butt: true, tail: "thin" },
+  { color: 0x8e24aa, ink: "#ff0", pattern: "stars", mouth: true, tail: "thin" },
+  { color: 0xfb8c00, ink: "#000", pattern: "bands", ears: true, nose: true },
+  { color: 0xec407a, ink: "#fff", pattern: "diamonds", butt: true, antennas: true },
+  { color: 0x00acc1, ink: "#fff", pattern: "rings", eyes: 0.4, mouth: true, tail: "bushy" },
+];
+const COLORS = LOOKS.map((l) => l.color);
 const POINTS = { decap: 5, fall: 1 }; // a fall nobody pushed scores nothing
 const WIN_SCORE = 20;
 const MATCH_PAUSE = 6; // seconds the winner stays on screen before the lobby
@@ -83,19 +95,108 @@ const NECK_BASE = 1.6;
 const NECK_TOP = 2.35;
 const HEAD_Y = 2.55;
 const skin = new THREE.MeshStandardMaterial({ color: 0xf1c27d });
-function makeAvatar(color) {
+const white = new THREE.MeshStandardMaterial({ color: 0xffffff });
+const dark = new THREE.MeshStandardMaterial({ color: 0x111111 });
+const lips = new THREE.MeshStandardMaterial({ color: 0x8b0000 });
+const ball = (r) => new THREE.SphereGeometry(r, 16, 12);
+
+// The body's fabric: the slot's colour, with its pattern drawn over in ink.
+function patternTexture({ color, ink, pattern }) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 256;
+  const g = canvas.getContext("2d");
+  g.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+  g.fillRect(0, 0, 256, 256);
+  g.fillStyle = g.strokeStyle = ink;
+  g.lineWidth = 12;
+  const grid = (draw) => {
+    for (let y = 0; y < 256; y += 64) for (let x = 0; x < 256; x += 64) draw(x, y);
+  };
+  // A star of n branches; with n = 2 and both radii equal, a diamond.
+  const star = (x, y, n, outer, inner) => {
+    g.beginPath();
+    for (let k = 0; k < 2 * n; k++) {
+      const r = k % 2 ? inner : outer, a = (k * Math.PI) / n;
+      g.lineTo(x + r * Math.sin(a), y - r * Math.cos(a));
+    }
+    g.fill();
+  };
+  const draw = {
+    dots: () => grid((x, y) => {
+      g.beginPath();
+      g.arc(x + 32, y + 32, 16, 0, 2 * Math.PI);
+      g.fill();
+    }),
+    stripes: () => grid((x, y) => g.fillRect(x, y, 64, 24)),
+    bands: () => grid((x, y) => g.fillRect(x, y, 22, 64)),
+    checks: () => grid((x, y) => (x + y) % 128 && g.fillRect(x, y, 64, 64)),
+    zigzag: () => grid((x, y) => {
+      g.beginPath();
+      g.moveTo(x, y + 16);
+      g.lineTo(x + 32, y + 48);
+      g.lineTo(x + 64, y + 16);
+      g.stroke();
+    }),
+    stars: () => grid((x, y) => star(x + 32, y + 32, 5, 26, 11)),
+    diamonds: () => grid((x, y) => star(x + 32, y + 32, 2, 24, 24)),
+    rings: () => grid((x, y) => {
+      for (const r of [24, 10]) {
+        g.beginPath();
+        g.arc(x + 32, y + 32, r, 0, 2 * Math.PI);
+        g.stroke();
+      }
+    }),
+  };
+  draw[pattern]();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(2, 1);
+  return texture;
+}
+
+// The face looks to -z. What is on the head flies off with it.
+function makeAvatar(look) {
   const group = new THREE.Group();
   group.rotation.order = "YXZ";
   group.scale.setScalar(SCALE);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 0.8, 4, 12), new THREE.MeshStandardMaterial({ color }));
-  torso.position.y = 0.95;
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, NECK_TOP - NECK_BASE, 10), skin);
-  neck.position.y = (NECK_BASE + NECK_TOP) / 2;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 12), skin);
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.08, 0.1), new THREE.MeshStandardMaterial({ color: 0x111111 }));
-  visor.position.set(0, 0.04, -0.21);
-  head.add(visor);
-  group.add(torso, neck, head);
+  const fabric = new THREE.MeshStandardMaterial({ map: patternTexture(look) });
+  const plain = new THREE.MeshStandardMaterial({ color: look.color });
+  const part = (geo, mat, parent, x, y, z) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    parent.add(m);
+    return m;
+  };
+  part(new THREE.CapsuleGeometry(0.35, 0.8, 4, 12), fabric, group, 0, 0.95, 0);
+  part(new THREE.CylinderGeometry(0.07, 0.09, NECK_TOP - NECK_BASE, 10), skin, group, 0, (NECK_BASE + NECK_TOP) / 2, 0);
+  const head = part(ball(0.25), skin, group, 0, HEAD_Y, 0);
+  const eye = 0.05 * (look.eyes ?? 1);
+  for (const side of [-1, 1]) {
+    const x = side * Math.max(0.09, eye);
+    part(ball(eye), white, head, x, 0.06, -0.2);
+    part(ball(eye / 2), dark, head, x, 0.06, -0.2 - eye * 0.8);
+    if (look.antennas) {
+      part(new THREE.CylinderGeometry(0.02, 0.02, 0.7, 6), dark, head, side * 0.2, 0.54, 0).rotation.z = -side * 0.4;
+      part(ball(0.09), plain, head, side * 0.33, 0.86, 0);
+    }
+    if (look.ears) part(ball(0.25), plain, head, side * 0.34, 0.08, 0).scale.set(0.25, 1.7, 1.4);
+    if (look.butt) part(ball(0.4), fabric, group, side * 0.21, 0.6, 0.3);
+  }
+  if (look.nose) part(new THREE.ConeGeometry(0.11, 0.9, 12), skin, head, 0, -0.02, -0.65).rotation.x = -Math.PI / 2;
+  if (look.mouth) {
+    part(ball(0.14), lips, head, 0, -0.1, -0.18).scale.set(2, 0.9, 0.7);
+    part(new THREE.BoxGeometry(0.3, 0.05, 0.03), white, head, 0, -0.05, -0.27);
+  }
+  if (look.tail === "bushy") {
+    const tail = part(ball(0.3), fabric, group, 0, 0.9, 0.85);
+    tail.scale.set(1, 1, 2.6);
+    tail.rotation.x = -0.6;
+  }
+  if (look.tail === "thin") {
+    part(new THREE.CylinderGeometry(0.03, 0.03, 1.5, 6), plain, group, 0, 0.92, 0.95).rotation.x = 1.05;
+    part(ball(0.12), plain, group, 0, 1.3, 1.6);
+  }
   scene.add(group);
   return { group, head };
 }
@@ -106,7 +207,7 @@ const joining = params.get("room"); // a code: join that room; none: host one
 const BOTS = joining ? 0 : Math.min(Number(params.get("bots")) || 0, NAMES.length - 1);
 const entities = NAMES.map((name, i) => ({
   name, color: COLORS[i], bot: i > 0 && i <= BOTS, empty: !!joining || i > BOTS,
-  score: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, ...makeAvatar(COLORS[i]),
+  score: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, ...makeAvatar(LOOKS[i]),
 }));
 entities.forEach((e) => (e.group.visible = !e.empty));
 let me = entities[0]; // a guest learns its slot from the host's first state
