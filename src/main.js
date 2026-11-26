@@ -106,6 +106,45 @@ abyss.rotation.x = -Math.PI / 2;
 abyss.position.y = -40;
 scene.add(wall, wallLine, abyss);
 
+// The stands around the arena, and their crowd: it sways, and jumps up at each death.
+const STAND_ROWS = 8;
+const STAND_RADIUS = 23;
+const STAND_DEPTH = 1.6;
+const STAND_RISE = 1.3;
+const standMaterial = new THREE.MeshStandardMaterial({ color: 0x2b2f3a, side: THREE.DoubleSide });
+const fans = [];
+for (let row = 0; row < STAND_ROWS; row++) {
+  const r = STAND_RADIUS + row * STAND_DEPTH, y = -1 + row * STAND_RISE;
+  const riser = new THREE.Mesh(new THREE.CylinderGeometry(r, r, STAND_RISE, 96, 1, true), standMaterial);
+  riser.position.y = y - STAND_RISE / 2;
+  const tread = new THREE.Mesh(new THREE.RingGeometry(r, r + STAND_DEPTH, 96), standMaterial);
+  tread.rotation.x = -Math.PI / 2;
+  tread.position.y = y;
+  scene.add(riser, tread);
+  const seats = Math.floor((2 * Math.PI * r) / 0.9);
+  for (let i = 0; i < seats; i++) {
+    if (Math.random() < 0.25) continue; // empty seats
+    const a = ((i + Math.random() * 0.3) / seats) * 2 * Math.PI;
+    fans.push({ x: Math.cos(a) * (r + 0.8), y, z: Math.sin(a) * (r + 0.8), phase: Math.random() * 10 });
+  }
+}
+const fanBodies = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.3, 0.5, 4, 8), new THREE.MeshStandardMaterial(), fans.length);
+const fanHeads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.24, 10, 8), new THREE.MeshStandardMaterial({ color: 0xf1c27d }), fans.length);
+const shirt = new THREE.Color();
+fans.forEach((f, i) => fanBodies.setColorAt(i, shirt.setHSL(Math.random(), 0.8, 0.55)));
+scene.add(fanBodies, fanHeads);
+let cheerUntil = 0;
+const fanSpot = new THREE.Matrix4();
+function updateFans() {
+  const cheering = now < cheerUntil;
+  fans.forEach((f, i) => {
+    const hop = cheering ? Math.abs(Math.sin(now * 9 + f.phase)) * 0.6 : Math.sin(now * 2 + f.phase) * 0.05;
+    fanBodies.setMatrixAt(i, fanSpot.makeTranslation(f.x, f.y + 0.55 + hop, f.z));
+    fanHeads.setMatrixAt(i, fanSpot.makeTranslation(f.x, f.y + 1.3 + hop, f.z));
+  });
+  fanBodies.instanceMatrix.needsUpdate = fanHeads.instanceMatrix.needsUpdate = true;
+}
+
 // The players: a body, a long neck that makes a target, and a head that comes off.
 const NECK_BASE = 1.6;
 const NECK_TOP = 2.35;
@@ -765,6 +804,7 @@ function feed(text, players = {}, shout = "") {
   }
   if (Object.keys(players).length) {
     line.className = "event";
+    cheerUntil = now + 2.5;
     announce(said, shout);
   }
   $("feed").append(line);
@@ -1021,6 +1061,7 @@ renderer.setAnimationLoop(() => {
   else hostFrame(dt);
   updateHeads(dt);
   updateBlood(dt);
+  updateFans();
   pads.forEach((p) => (p.material.emissiveIntensity = 1.2 + 0.6 * Math.sin(now * 6)));
   $("discs").textContent = "●".repeat(me.discs ?? 0) + "○".repeat(MAX_DISCS - (me.discs ?? MAX_DISCS));
   if (me.body) updateCamera();

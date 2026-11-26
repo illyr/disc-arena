@@ -34,6 +34,7 @@ Une partie se joue en chacun pour soi : une décapitation vaut 5 points, éjecte
 (tomber sans avoir été poussé ne rapporte rien). Le premier à 20 points gagne.
 Avant chaque partie, une salle d'attente : on s'échauffe sans marquer, puis l'hôte clique « Lancer la partie »
 (Échap pour l'afficher) ; on y revient 6 s après chaque victoire.
+Autour de l'arène, des gradins pleins de spectateurs, qui se lèvent et sautent à chaque mort.
 Chaque place a son look (couleur, motif, oreilles, nez, queue…), et la salle d'attente montre le portrait de chacun.
 Chacun y arrive avec un pseudo tiré au hasard et son alias court, qui sert en partie (`src/pseudos.js`, avec les
 phrases des morts), et peut le changer dans le champ « Ton pseudo » : le nom choisi sert alors aussi d'alias.
