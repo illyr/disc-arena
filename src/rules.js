@@ -12,7 +12,7 @@ export const CHEST = 1.55; // the discs fly flat, at chest height
 export const HIT_RADIUS = 0.7;
 export const NECK_BOTTOM = 2.15; // above it, up to the top of the head, a disc cuts the head off
 export const HEAD_TOP = 3.65;
-export const LEGS_TOP = 0.6; // below it, a plain disc cuts a leg off
+export const LEGS_TOP = 0.9; // the long legs: below it, a plain disc cuts one off; without them, a player sinks by as much
 export const HOP_SPEED = 4; // on one leg, a player moves by little hops
 export const LEG_SPEED = [0.35, 0.6, 1]; // the running speed with 0, 1 or 2 legs
 export const ARENA_RADIUS = 30; // the wall the discs bounce on
@@ -267,7 +267,7 @@ export function hitZone(a, b, body, size = 1, scale = 1) {
   // The height where the disc's line crosses the player's axis: what it cuts, flying down or up as flat.
   const dx = b.x - a.x, dz = b.z - a.z, len2 = dx * dx + dz * dz;
   const t = len2 ? ((body.pos.x - a.x) * dx + (body.pos.z - a.z) * dz) / len2 : 0.5;
-  const y = (a.y + (b.y - a.y) * t - body.pos.y) / scale;
+  const y = (a.y + (b.y - a.y) * t - body.pos.y) / scale + (body.legs === 0 ? LEGS_TOP : 0);
   if (y < 0 || y > HEAD_TOP) return null;
   const flat = (p) => ({ x: p.x, y: 0, z: p.z });
   if (!segmentHits(flat(a), flat(b), flat(body.pos), HIT_RADIUS * scale + DISC_RADIUS * (size - 1))) return null;

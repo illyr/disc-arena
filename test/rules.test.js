@@ -113,6 +113,14 @@ test("a disc flying down is judged where it crosses the player, not where it fir
   assert.equal(hitZone(a, b, body), "legs");
 });
 
+test("a player without legs has no legs to cut, and its neck sits lower", () => {
+  const body = newBody({ x: 0, y: 0, z: 0 });
+  body.legs = 0;
+  const at = (y) => hitZone({ x: -1, y, z: 0 }, { x: 1, y, z: 0 }, body);
+  assert.equal(at(0.3), "body");
+  assert.equal(at(NECK_BOTTOM - LEGS_TOP + 0.1), "neck");
+});
+
 test("a jump clears a disc flying at chest height", () => {
   const b = newBody(PLATFORMS[0]);
   let top = 0;

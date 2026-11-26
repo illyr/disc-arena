@@ -2,7 +2,7 @@ import * as THREE from "three";
 import {
   ARENA_RADIUS, BOOST_TIME, CHEST, DISC_RADIUS, DISC_SPEED, FAT, FAT_TIME, GIANT, FALL_DEATH_Y, GRAVITY, LEVEL, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
   WALLS, WALL_HEIGHT, WALL_THICKNESS,
-  chest, hitZone, thickness, knock, newBody, newDisc, platformUnder, steer, stepBody, stepDisc,
+  LEGS_TOP, chest, hitZone, thickness, knock, newBody, newDisc, platformUnder, steer, stepBody, stepDisc,
 } from "./rules.js";
 import { hostRoom, joinRoom, newRoomCode } from "./net.js";
 import { crySlug, DECAP_LINES, FALL_LINES, PSEUDOS, PUSH_LINES, STREAK_SHOUTS } from "./pseudos.js";
@@ -163,7 +163,6 @@ function updateFans() {
 const NECK_BASE = 1.6;
 const NECK_TOP = 2.35;
 const HEAD_Y = 2.55;
-const STUMP = 0.2; // under the body, what a player without legs sinks by
 const skin = new THREE.MeshStandardMaterial({ color: 0xf1c27d });
 const white = new THREE.MeshStandardMaterial({ color: 0xffffff });
 const dark = new THREE.MeshStandardMaterial({ color: 0x111111 });
@@ -172,6 +171,9 @@ const gold = new THREE.MeshStandardMaterial({
   color: 0xffd700, emissive: 0xffaa00, emissiveIntensity: 0.5, metalness: 0.6, roughness: 0.3, side: THREE.DoubleSide,
 });
 const ball = (r) => new THREE.SphereGeometry(r, 16, 12);
+const LEG = new THREE.CylinderGeometry(0.1, 0.08, 0.8, 10);
+const LEG_X = 0.15;
+const LEG_Y = 0.4;
 
 // The body's fabric: the slot's colour, with its pattern drawn over in ink.
 function patternTexture({ color, ink, pattern }) {
@@ -241,11 +243,11 @@ function makeAvatar(look) {
     parent.add(m);
     return m;
   };
-  part(new THREE.CapsuleGeometry(0.35, 0.8, 4, 12), fabric, group, 0, 0.95, 0);
+  part(new THREE.CapsuleGeometry(0.33, 0.34, 4, 12), fabric, group, 0, 1.2, 0); // on legs as long as the neck
   part(new THREE.CylinderGeometry(0.07, 0.09, NECK_TOP - NECK_BASE, 10), skin, group, 0, (NECK_BASE + NECK_TOP) / 2, 0);
   const head = part(ball(0.25), skin, group, 0, HEAD_Y, 0);
   // Bare legs, cut off by the low discs: the second one goes first.
-  const limbs = [-1, 1].map((side) => part(new THREE.CylinderGeometry(0.1, 0.08, 0.5, 10), skin, group, side * 0.17, 0.25, 0));
+  const limbs = [-1, 1].map((side) => part(LEG, skin, group, side * LEG_X, LEG_Y, 0));
   // Worn by the leader only, oversized to be seen across the arena; it flies off with the head.
   const crown = new THREE.Group();
   crown.position.y = 0.32;
@@ -267,7 +269,7 @@ function makeAvatar(look) {
       part(ball(0.09), plain, head, side * 0.33, 0.86, 0);
     }
     if (look.ears) part(ball(0.25), plain, head, side * 0.34, 0.08, 0).scale.set(0.25, 1.7, 1.4);
-    if (look.butt) part(ball(0.4), fabric, group, side * 0.21, 0.6, 0.3);
+    if (look.butt) part(ball(0.4), fabric, group, side * 0.21, 0.85, 0.3);
   }
   if (look.nose) part(new THREE.ConeGeometry(0.11, 0.9, 12), skin, head, 0, -0.02, -0.65).rotation.x = -Math.PI / 2;
   if (look.mouth) {
@@ -275,13 +277,13 @@ function makeAvatar(look) {
     part(new THREE.BoxGeometry(0.3, 0.05, 0.03), white, head, 0, -0.05, -0.27);
   }
   if (look.tail === "bushy") {
-    const tail = part(ball(0.3), fabric, group, 0, 0.9, 0.85);
+    const tail = part(ball(0.3), fabric, group, 0, 1.15, 0.85);
     tail.scale.set(1, 1, 2.6);
     tail.rotation.x = -0.6;
   }
   if (look.tail === "thin") {
-    part(new THREE.CylinderGeometry(0.03, 0.03, 1.5, 6), plain, group, 0, 0.92, 0.95).rotation.x = 1.05;
-    part(ball(0.12), plain, group, 0, 1.3, 1.6);
+    part(new THREE.CylinderGeometry(0.03, 0.03, 1.5, 6), plain, group, 0, 1.17, 0.95).rotation.x = 1.05;
+    part(ball(0.12), plain, group, 0, 1.55, 1.6);
   }
   // The shield: a bubble around the player while it lasts.
   const bubble = part(ball(1.5), new THREE.MeshBasicMaterial({ color: 0x82b1ff, transparent: true, opacity: 0.25, depthWrite: false }), group, 0, 1.3, 0);
@@ -341,7 +343,7 @@ let fightAt = 0; // the host's end of the countdown: no kill counts before
 let lastTop = null; // the leader last shown, to tell me when I take the lead or lose it
 const discs = [];
 const drops = [];
-const flyingHeads = [];
+const flyingParts = []; // heads and legs cut off, until their owner is back
 let now = 0;
 let slowUntil = 0; // performance.now() until which a decapitation plays in slow motion
 let replay = null; // the killcam playing: { killer, from: when the death was, lead }
@@ -368,11 +370,17 @@ function resetAvatar(e) {
   e.head.position.set(0, HEAD_Y, 0);
   e.head.rotation.set(0, 0, 0);
   e.head.scale.setScalar(1); // scene.attach gave it the scale of the group
-  e.limbs.forEach((m, k) => (m.visible = k < e.legs));
+  e.limbs.forEach((m, k) => {
+    e.group.add(m);
+    m.position.set((2 * k - 1) * LEG_X, LEG_Y, 0);
+    m.rotation.set(0, 0, 0);
+    m.scale.setScalar(1);
+    m.visible = k < e.legs;
+  });
+  e.lastStep = null;
   e.group.visible = e !== me;
   if (e === me) replay = null;
-  const i = flyingHeads.findIndex((h) => h.owner === e);
-  if (i >= 0) flyingHeads.splice(i, 1);
+  for (let i = flyingParts.length; i--;) if (flyingParts[i].owner === e) flyingParts.splice(i, 1);
   if (e === me) banner(winBanner());
   renderScores();
 }
@@ -399,7 +407,7 @@ function aim(e) {
   const f = forward(e.yaw), look = e.pitch ?? 0;
   const dir = new THREE.Vector3(f.x * Math.cos(look), Math.sin(look), f.z * Math.cos(look));
   if (!e.bot) {
-    const b = e.body.pos, eye = new THREE.Vector3(b.x, b.y + EYE - (e.legs ? 0 : STUMP * SCALE), b.z);
+    const b = e.body.pos, eye = new THREE.Vector3(b.x, b.y + EYE - (e.legs ? 0 : LEGS_TOP), b.z);
     raycaster.set(eye, dir);
     const others = entities.filter((o) => o !== e && o.alive && !o.empty);
     const hit = raycaster.intersectObjects([...platformParts.filter((_, i) => !PLATFORMS[i].gone).flat(), wall, ...others.map((o) => o.group)])
@@ -764,8 +772,10 @@ function decapitate(e, dir) {
   e.group.updateMatrixWorld();
   scene.attach(e.head);
   const len = Math.hypot(dir.x, dir.z) || 1;
-  flyingHeads.push({
+  flyingParts.push({
     owner: e,
+    mesh: e.head,
+    rest: 0.25,
     vel: new THREE.Vector3((dir.x / len) * 5, 13, (dir.z / len) * 5),
     spin: new THREE.Vector3(Math.random() * 15, Math.random() * 15, Math.random() * 15),
   });
@@ -794,17 +804,17 @@ function updateCorpse(e, dt) {
 }
 
 const KICK_SPEED = 11;
-function updateHeads(dt) {
-  for (const h of flyingHeads) {
-    const m = h.owner.head;
+function updateParts(dt) {
+  for (const h of flyingParts) {
+    const m = h.mesh;
     h.vel.y -= GRAVITY * dt;
     m.position.addScaledVector(h.vel, dt);
     m.rotation.x += h.spin.x * dt;
     m.rotation.y += h.spin.y * dt;
     m.rotation.z += h.spin.z * dt;
     const ground = platformUnder(m.position)?.y;
-    if (h.vel.y < 0 && m.position.y < ground + 0.25 && m.position.y > ground - 0.5) {
-      m.position.y = ground + 0.25;
+    if (h.vel.y < 0 && m.position.y < ground + h.rest && m.position.y > ground - 0.5) {
+      m.position.y = ground + h.rest;
       h.vel.set(h.vel.x * 0.6, -h.vel.y * 0.4, h.vel.z * 0.6);
       h.spin.multiplyScalar(0.6);
       bleed(m.position, 20, UP, 3, 4);
@@ -821,7 +831,7 @@ function updateHeads(dt) {
     }
     if (!joining && h.kicker && !h.scored && m.position.y < FALL_DEATH_Y) {
       h.scored = true;
-      tell("{K} a marqué avec la tête de {V}", { "{K}": h.kicker, "{V}": h.owner }, "Et c'est le buuut !", true);
+      tell(h.leg ? "{K} a marqué avec la jambe de {V}" : "{K} a marqué avec la tête de {V}", { "{K}": h.kicker, "{V}": h.owner }, "Et c'est le buuut !", true);
     }
   }
 }
@@ -838,13 +848,22 @@ scene.add(dropMesh, stainMesh);
 const dummy = new THREE.Object3D();
 let stainCount = 0;
 
-// A leg off, on the host and on its guests: the stump spurts, the leg is gone.
+// A leg off, on the host and on its guests: it flies off spinning, the stump spurts.
 function loseLeg(e, legs) {
   e.legs = legs;
-  e.limbs.forEach((m, k) => (m.visible = k < legs)); // a guest may get both cuts in one state
-  const hip = { x: e.body.pos.x, y: e.body.pos.y + 0.3, z: e.body.pos.z };
-  bleed(hip, 150, UP, 5, 5);
-  splat(hip);
+  e.group.updateMatrixWorld();
+  // A guest may get both cuts in one state.
+  for (const m of e.limbs.slice(legs).filter((m) => m.parent === e.group)) {
+    scene.attach(m);
+    const a = Math.random() * 2 * Math.PI;
+    flyingParts.push({
+      owner: e, mesh: m, rest: 0.13, leg: true,
+      vel: new THREE.Vector3(Math.sin(a) * 4, 9, Math.cos(a) * 4),
+      spin: new THREE.Vector3(Math.random() * 12, Math.random() * 12, Math.random() * 12),
+    });
+    bleed(m.position, 150, UP, 5, 5);
+    splat(m.position);
+  }
 }
 
 // count drops from at, along dir at about speed, scattered by spread on each axis.
@@ -1029,7 +1048,7 @@ addEventListener("wheel", (ev) => {
 }, { passive: true });
 
 function updateCamera() {
-  const flying = flyingHeads.find((h) => h.owner === me);
+  const flying = flyingParts.find((h) => h.owner === me && !h.leg);
   if (flying) {
     // Decapitated: the view steps out behind the body to watch the geyser (from the head, the blood hides all).
     me.group.updateMatrixWorld();
@@ -1042,7 +1061,7 @@ function updateCamera() {
   // Further back, the view also looks down, over the platforms, with me still in its middle; it stays inside the stands.
   // shortcut: the camera still goes through a platform or a cover right behind me; push it in front if it bothers players.
   const pitch = me.pitch - ZOOM_TILT * (zoom / MAX_ZOOM);
-  const back = (d) => new THREE.Vector3(Math.sin(me.yaw) * Math.cos(pitch) * d, EYE - (me.legs ? 0 : STUMP * SCALE) - Math.sin(pitch) * d, Math.cos(me.yaw) * Math.cos(pitch) * d)
+  const back = (d) => new THREE.Vector3(Math.sin(me.yaw) * Math.cos(pitch) * d, EYE - (me.legs ? 0 : LEGS_TOP) - Math.sin(pitch) * d, Math.cos(me.yaw) * Math.cos(pitch) * d)
     .add(me.body.pos);
   let d = zoom;
   while (d > 0 && Math.hypot(back(d).x, back(d).z) > ARENA_RADIUS - 1) d -= 0.5;
@@ -1234,6 +1253,49 @@ function splat(at) {
   tone(s, "sine", 160, 40, 0.25, 0.9);
   noise(s, "lowpass", 1400, 200, 0.35, 0.9, 0.005);
   for (let i = 0; i < 8; i++) noise(s, "bandpass", 300 + Math.random() * 900, 150 + Math.random() * 300, 0.06, 0.6, 0.005, 6, 0.08 + Math.random() * 0.5);
+}
+// A footstep: a soft scuff and a thud, the left foot a little higher than the right.
+function step(at, left) {
+  const s = sound(at);
+  if (!s) return;
+  noise(s, "lowpass", left ? 900 : 700, 150, 0.09, 0.15, 0.004);
+  tone(s, "sine", left ? 110 : 90, 50, 0.08, 0.2);
+}
+// A hop on one leg: the foot lands, and a spring goes boiiing.
+function boing(at) {
+  const s = sound(at);
+  if (!s) return;
+  const { ctx, t, out } = s;
+  tone(s, "sine", 140, 50, 0.1, 0.3);
+  const spring = ctx.createOscillator(), wobble = ctx.createOscillator(), depth = ctx.createGain(), gain = ctx.createGain();
+  spring.frequency.setValueAtTime(100 + Math.random() * 40, t);
+  spring.frequency.exponentialRampToValueAtTime(420, t + 0.35);
+  wobble.frequency.value = 22;
+  depth.gain.value = 45;
+  wobble.connect(depth).connect(spring.frequency);
+  gain.gain.setValueAtTime(0.22, t);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  spring.connect(gain).connect(out);
+  for (const o of [spring, wobble]) {
+    o.start(t);
+    o.stop(t + 0.4);
+  }
+}
+// On two legs, a step every STRIDE m walked on a floor; on one, a boing each time it lands.
+const STRIDE = 1.4;
+function steps(e) {
+  const p = e.body.pos, pl = platformUnder(p);
+  const floor = !!pl && Math.abs(p.y - pl.y) < 0.05;
+  if (e.legs === 1 && floor && !e.onFloor) boing(p);
+  if (e.legs === 2 && floor && e.lastStep) {
+    e.walked = (e.walked ?? 0) + Math.hypot(p.x - e.lastStep.x, p.z - e.lastStep.z);
+    if (e.walked > STRIDE) {
+      e.walked = 0;
+      step(p, (e.leftFoot = !e.leftFoot));
+    }
+  }
+  e.onFloor = floor;
+  e.lastStep = { x: p.x, z: p.z };
 }
 
 // An exploit across the screen for 2 s: the player's card, their alias, the shout.
@@ -1574,6 +1636,7 @@ function hostFrame(dt) {
       if (now > e.respawnAt) spawn(e);
     }
     pose(e);
+    if (e.alive) steps(e);
   }
   updateDiscs(dt);
   updateArena();
@@ -1585,11 +1648,13 @@ function hostFrame(dt) {
   for (const e of entities) if (e.conn?.open) e.conn.send({ ...state, you: entities.indexOf(e) });
 }
 
-// The avatar where the body is, and the body told of its powers and its legs. Legless, it sits on its stumps.
+// The avatar where the body is, and the body told of its powers and its legs.
+// Legless, it sits on its stumps; on one leg, it leans over it and wobbles.
 function pose(e) {
   const scale = has(e, "fat") ? SCALE * FAT : SCALE;
-  e.group.position.set(e.body.pos.x, e.body.pos.y - (e.legs ? 0 : STUMP * scale), e.body.pos.z);
+  e.group.position.set(e.body.pos.x, e.body.pos.y - (e.legs ? 0 : (LEGS_TOP * scale) / SCALE), e.body.pos.z);
   e.group.rotation.y = e.yaw;
+  if (e.alive) e.group.rotation.z = e.legs === 1 ? 0.2 + 0.08 * Math.sin(now * 12) : 0;
   e.group.scale.setScalar(scale);
   e.body.slippery = has(e, "ice");
   e.body.legs = e.legs;
@@ -1609,6 +1674,7 @@ function guestFrame(dt) {
     }
     if (!e.alive) updateCorpse(e, dt);
     pose(e);
+    if (e.alive) steps(e);
   }
   netDiscs.forEach((mesh) => (mesh.rotation.y += 25 * dt));
   if (!host?.open || !me.body) return;
@@ -1720,7 +1786,7 @@ renderer.setAnimationLoop(() => {
   now += dt;
   if (joining) guestFrame(dt);
   else hostFrame(dt);
-  updateHeads(dt);
+  updateParts(dt);
   updateBlood(dt);
   updateFans();
   showArena(dt);
