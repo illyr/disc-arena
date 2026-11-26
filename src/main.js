@@ -747,6 +747,7 @@ function banner(text) {
 let refereeVoice = null;
 let announcerVoice = null;
 let muted = false;
+let crowd = null; // the crowd's AudioContext, made at its first roar
 try {
   muted = localStorage.getItem("muted") === "1";
 } catch {} // no storage: the sound starts on
@@ -789,7 +790,6 @@ function announce(text, shout = "") {
 
 // The crowd at a decapitation, made up on the spot: hundreds of claps, and a chorus of voices
 // yelling « ouais » that rises then dies down, over the rumble of the stands.
-let crowd = null;
 const ROAR_TIME = 3.5;
 function roar() {
   if (muted || !window.AudioContext) return;
