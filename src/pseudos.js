@@ -133,4 +133,9 @@ export const DRAWN_SHOUTS = {
   "Monstrueux !": "Mon... mon... mons... trueux !",
   "Régicide !": "Ré... gi... cide !",
   "Humiliation !": "Hu... mi... li... ation !",
+  "Trickshot !": "Trick... shot !",
+  "Strike !": "Strai... ke !",
+  "Pénalty !": "Pé... nal... ty !",
+  "Outsider !": "Out... sai... deur !",
+  "Balle de match !": "Balle... de... match !",
 };

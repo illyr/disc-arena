@@ -31,6 +31,8 @@ export const BOOST_TIME = 60;
 // The maluses: whoever takes one is FAT times bigger every way for FAT_TIME seconds, an easy target.
 export const FAT = 4;
 export const FAT_TIME = 10;
+export const ICE_GRIP = 1.5; // per second: on slippery feet, how fast the speed follows the keys
+export const HOMING_TURN = 2.5; // radians a second a homing disc turns toward its target
 
 // Three floors, none above another: the center and four platforms on the axes on the ground, four on the
 // diagonals one floor up, four towers on the axes two floors up, near the wall. Going down: a jump off the
@@ -80,7 +82,7 @@ const wallLocal = (p, w) => {
 function blockBody(b) {
   const reach = WALL_THICKNESS / 2 + BODY_RADIUS;
   for (const w of WALLS) {
-    if (b.pos.y >= w.y + WALL_HEIGHT || b.pos.y < w.y - 1) continue;
+    if (w.on.gone || b.pos.y >= w.y + WALL_HEIGHT || b.pos.y < w.y - 1) continue;
     const { u, v } = wallLocal(b.pos, w);
     const along = Math.max(-w.half, Math.min(w.half, u));
     const cx = w.x + w.ax * along, cz = w.z + w.az * along;
@@ -94,18 +96,22 @@ function blockBody(b) {
   }
 }
 
-export const platformUnder = (p) => PLATFORMS.find((pl) => Math.hypot(p.x - pl.x, p.z - pl.z) < pl.r);
+// A platform can vanish for a while (gone, set by the game): it no longer holds anyone, nor its walls.
+export const thickness = (pl) => (pl.y ? 0.6 : 1.5); // the upper floors thin: a flat disc flies under them
+export const platformUnder = (p) => PLATFORMS.find((pl) => !pl.gone && Math.hypot(p.x - pl.x, p.z - pl.z) < pl.r);
+for (const w of WALLS) w.on = platformUnder(w);
 export const chest = (b) => ({ x: b.pos.x, y: b.pos.y + CHEST, z: b.pos.z });
 
 export function newBody(platform) {
   return { pos: { x: platform.x, y: platform.y, z: platform.z }, vel: { x: 0, y: 0, z: 0 }, push: { x: 0, z: 0 }, onGround: true };
 }
 
-// wish: the wanted direction on the ground, of length 0 to 1.
+// wish: the wanted direction on the ground, of length 0 to 1. On slippery feet, the speed follows it slowly.
 export function stepBody(b, wish, jump, dt) {
   if (b.onGround) {
-    b.vel.x = wish.x * RUN_SPEED;
-    b.vel.z = wish.z * RUN_SPEED;
+    const grip = b.slippery ? 1 - Math.exp(-ICE_GRIP * dt) : 1;
+    b.vel.x += (wish.x * RUN_SPEED - b.vel.x) * grip;
+    b.vel.z += (wish.z * RUN_SPEED - b.vel.z) * grip;
     const k = Math.exp(-PUSH_DECAY * dt);
     b.push.x *= k;
     b.push.z *= k;
@@ -147,7 +153,7 @@ export function knock(b, dir) {
 }
 
 // The decapitator takes the three discs and bounces once; a plain disc takes one and bounces three times.
-// size: how many times wider than a plain disc.
+// dir: where it was aimed, a unit vector, up or down too. size: how many times wider than a plain disc.
 export function newDisc(owner, from, dir, decap, size = 1) {
   return {
     owner,
@@ -155,11 +161,12 @@ export function newDisc(owner, from, dir, decap, size = 1) {
     size,
     cost: decap ? MAX_DISCS : 1,
     bounces: decap ? 1 : 3,
+    rebounds: 0, // so far: a hit after some is a trickshot
     age: 0,
     returning: false,
     pos: { x: from.x + dir.x * 0.8, y: from.y + CHEST, z: from.z + dir.z * 0.8 },
     prev: null,
-    vel: { x: dir.x * DISC_SPEED, y: 0, z: dir.z * DISC_SPEED },
+    vel: { x: dir.x * DISC_SPEED, y: (dir.y ?? 0) * DISC_SPEED, z: dir.z * DISC_SPEED },
   };
 }
 
@@ -185,16 +192,33 @@ export function stepDisc(d, home, dt) {
     d.vel.z -= 2 * dot * nz;
     d.pos.x = nx * edge;
     d.pos.z = nz * edge;
+    d.rebounds++;
     if (--d.bounces < 0) d.returning = true;
   }
   if (!d.returning) bounceOffWalls(d);
+  if (!d.returning) bounceOffPlatforms(d);
+}
+
+// A disc thrown up or down bounces off the top or the bottom of a platform it goes through.
+function bounceOffPlatforms(d) {
+  for (const pl of PLATFORMS) {
+    if (pl.gone || Math.hypot(d.pos.x - pl.x, d.pos.z - pl.z) >= pl.r) continue;
+    const bottom = pl.y - thickness(pl);
+    const down = d.prev.y >= pl.y && d.pos.y < pl.y, up = d.prev.y <= bottom && d.pos.y > bottom;
+    if (!down && !up) continue;
+    d.vel.y = -d.vel.y;
+    d.pos.y = down ? pl.y : bottom;
+    d.rebounds++;
+    if (--d.bounces < 0) d.returning = true;
+    return;
+  }
 }
 
 // A disc that reaches a wall, or crossed it during the frame, bounces back to the side it came from.
 function bounceOffWalls(d) {
   const radius = DISC_RADIUS * d.size, reach = WALL_THICKNESS / 2 + radius;
   for (const w of WALLS) {
-    if (d.pos.y < w.y || d.pos.y >= w.y + WALL_HEIGHT) continue;
+    if (w.on.gone || d.pos.y < w.y || d.pos.y >= w.y + WALL_HEIGHT) continue;
     const a = wallLocal(d.prev, w), b = wallLocal(d.pos, w);
     const crossed = Math.sign(a.v) !== Math.sign(b.v);
     if (Math.abs(b.u) > w.half + radius || (!crossed && Math.abs(b.v) >= reach)) continue;
@@ -206,9 +230,20 @@ function bounceOffWalls(d) {
     d.vel.z -= 2 * dot * nz;
     d.pos.x = w.x + w.ax * b.u + nx * reach;
     d.pos.z = w.z + w.az * b.u + nz * reach;
+    d.rebounds++;
     if (--d.bounces < 0) d.returning = true;
     return;
   }
+}
+
+// Turns a flying disc toward to, at most HOMING_TURN radians a second, at the same speed.
+export function steer(d, to, dt) {
+  const heading = Math.atan2(d.vel.z, d.vel.x), want = Math.atan2(to.z - d.pos.z, to.x - d.pos.x);
+  const max = HOMING_TURN * dt;
+  const turn = Math.max(-max, Math.min(max, Math.atan2(Math.sin(want - heading), Math.cos(want - heading))));
+  const speed = Math.hypot(d.vel.x, d.vel.z);
+  d.vel.x = Math.cos(heading + turn) * speed;
+  d.vel.z = Math.sin(heading + turn) * speed;
 }
 
 // Whether the segment a-b, a disc's move in one frame, passes within radius of c.

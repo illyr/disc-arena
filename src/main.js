@@ -2,7 +2,7 @@ import * as THREE from "three";
 import {
   ARENA_RADIUS, BOOST_TIME, CHEST, DISC_SPEED, FAT, FAT_TIME, GIANT, FALL_DEATH_Y, GRAVITY, LEVEL, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
   WALLS, WALL_HEIGHT, WALL_THICKNESS,
-  chest, hitZone, knock, newBody, newDisc, platformUnder, stepBody, stepDisc,
+  chest, hitZone, thickness, knock, newBody, newDisc, platformUnder, steer, stepBody, stepDisc,
 } from "./rules.js";
 import { hostRoom, joinRoom, newRoomCode } from "./net.js";
 import { DECAP_LINES, DRAWN_SHOUTS, FALL_LINES, PSEUDOS, PUSH_LINES, STREAK_SHOUTS } from "./pseudos.js";
@@ -24,7 +24,10 @@ const COLORS = LOOKS.map((l) => l.color);
 const POINTS = { decap: 5, fall: 1 }; // a fall nobody pushed scores nothing
 const MAX_STREAK_BONUS = 3; // the n-th kill in a row without dying scores n - 1 more, up to this
 const REGICIDE_BONUS = 2; // for bringing down the crowned leader
+const MAX_TRICK_BONUS = 3; // a kill after n rebounds scores n more, up to this
 const WIN_SCORE = 20;
+const MATCH_POINT = WIN_SCORE - 2; // from it, the announcer, the crowd and the radar make much of the player
+const RAPID_MAX = 8; // discs in the air at once, in a burst
 const MATCH_PAUSE = 6; // seconds the winner stays on screen before the lobby
 const RESPAWN_DELAY = 2.5;
 const DECAP_RESPAWN_DELAY = 5; // long enough to watch the geyser
@@ -68,19 +71,22 @@ scene.add(sun);
 const FLOOR_COLORS = [0x00e5ff, 0xffc400, 0xff6d00]; // the rim of each floor's platforms, here and on the radar
 // The arena: platforms over the void, their pads, the wall the discs bounce on.
 const glow = (color, intensity = 1.5) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: intensity });
+const platformParts = PLATFORMS.map(() => []); // what vanishes with each platform: itself, its pads, its walls
 for (const pl of PLATFORMS) {
-  const thick = pl.y ? 0.6 : 1.5; // the upper floors thin: a flat disc flies under them
+  const thick = thickness(pl);
   const block = new THREE.Mesh(new THREE.CylinderGeometry(pl.r, pl.r * 0.6, thick, 48), new THREE.MeshStandardMaterial({ color: 0x3a3f4b }));
   block.position.set(pl.x, pl.y - thick / 2, pl.z);
   const edge = new THREE.Mesh(new THREE.TorusGeometry(pl.r, 0.06, 8, 64), glow(FLOOR_COLORS[Math.round(pl.y / LEVEL)]));
   edge.rotation.x = Math.PI / 2;
   edge.position.set(pl.x, pl.y + 0.01, pl.z);
   scene.add(block, edge);
+  platformParts[PLATFORMS.indexOf(pl)].push(block, edge);
 }
 const pads = PADS.map((p) => {
   const pad = new THREE.Mesh(new THREE.CylinderGeometry(PAD_RADIUS, PAD_RADIUS, 0.08, 32), glow(0x76ff03));
   pad.position.set(p.x, p.y + 0.04, p.z);
   scene.add(pad);
+  platformParts[PLATFORMS.indexOf(platformUnder(p))].push(pad);
   return pad;
 });
 // The cover, chest high, with a glowing top to see it from afar.
@@ -94,6 +100,7 @@ for (const w of WALLS) {
   cover.position.set(w.x, w.y, w.z);
   cover.rotation.y = Math.atan2(-w.az, w.ax);
   scene.add(cover);
+  platformParts[PLATFORMS.indexOf(w.on)].push(cover);
 }
 const wall = new THREE.Mesh(
   new THREE.CylinderGeometry(ARENA_RADIUS, ARENA_RADIUS, 12, 64, 1, true),
@@ -272,8 +279,11 @@ function makeAvatar(look) {
     part(new THREE.CylinderGeometry(0.03, 0.03, 1.5, 6), plain, group, 0, 0.92, 0.95).rotation.x = 1.05;
     part(ball(0.12), plain, group, 0, 1.3, 1.6);
   }
+  // The shield: a bubble around the player while it lasts.
+  const bubble = part(ball(1.5), new THREE.MeshBasicMaterial({ color: 0x82b1ff, transparent: true, opacity: 0.25, depthWrite: false }), group, 0, 1.3, 0);
+  bubble.visible = false;
   scene.add(group);
-  return { group, head, crown };
+  return { group, head, crown, bubble };
 }
 
 const params = new URLSearchParams(location.search);
@@ -282,7 +292,7 @@ const joining = params.get("room"); // a code: join that room; none: host one
 const BOTS = joining ? 0 : Math.min(Number(params.get("bots")) || 0, NAMES.length - 1);
 const entities = NAMES.map((name, i) => ({
   name, alias: name, color: COLORS[i], bot: i > 0 && i <= BOTS, empty: !!joining || i > BOTS,
-  score: 0, streak: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, ...makeAvatar(LOOKS[i]),
+  score: 0, streak: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, until: {}, ...makeAvatar(LOOKS[i]),
 }));
 entities.forEach((e) => (e.group.visible = !e.empty));
 
@@ -328,6 +338,7 @@ const drops = [];
 const flyingHeads = [];
 let now = 0;
 let slowUntil = 0; // performance.now() until which a decapitation plays in slow motion
+let replay = null; // the killcam playing: { killer, from: when the death was, lead }
 
 // The host puts a player back on a free platform; its guests follow from the states it sends.
 function spawn(e) {
@@ -337,7 +348,7 @@ function spawn(e) {
   const pl = (free.length ? free : low)[Math.floor(Math.random() * (free.length || low.length))];
   Object.assign(e, {
     body: newBody(pl), alive: true, life: e.life + 1, discs: MAX_DISCS, yaw: Math.atan2(pl.x, pl.z), pitch: 0,
-    lastHitBy: null, lastHitAt: 0, giantUntil: 0, fatUntil: 0, ai: { throwAt: now + 1 + Math.random(), shotAt: 0, turnAt: 0, strafe: 0 },
+    lastHitBy: null, lastHitAt: 0, until: {}, lastTricks: 0, ai: { throwAt: now + 1 + Math.random(), shotAt: 0, turnAt: 0, strafe: 0 },
   });
   resetAvatar(e);
 }
@@ -352,6 +363,7 @@ function resetAvatar(e) {
   e.head.rotation.set(0, 0, 0);
   e.head.scale.setScalar(1); // scene.attach gave it the scale of the group
   e.group.visible = e !== me;
+  if (e === me) replay = null;
   const i = flyingHeads.findIndex((h) => h.owner === e);
   if (i >= 0) flyingHeads.splice(i, 1);
   if (e === me) banner(winnerText);
@@ -371,11 +383,20 @@ function vacate(e) {
 const discGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.05, 24);
 const bladeGeo = new THREE.TorusGeometry(0.4, 0.07, 6, 24).rotateX(Math.PI / 2);
 const forward = (yaw) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
+// Where a player aims, up and down too: the disc flies there.
+const MAX_AIM_PITCH = 0.6;
+const aim = (e) => {
+  const pitch = Math.max(-MAX_AIM_PITCH, Math.min(MAX_AIM_PITCH, e.pitch ?? 0)), f = forward(e.yaw);
+  return { x: f.x * Math.cos(pitch), y: Math.sin(pitch), z: f.z * Math.cos(pitch) };
+};
 
 function throwDisc(e, decap) {
-  const d = newDisc(e, e.body.pos, forward(e.yaw), decap, now < e.giantUntil ? GIANT : 1);
-  if (!e.alive || e.discs < d.cost) return;
+  const d = newDisc(e, e.body.pos, aim(e), decap, has(e, "giant") ? GIANT : 1);
+  if (has(e, "rapid")) d.cost = 0;
+  const flying = discs.filter((o) => o.owner === e).length;
+  if (!e.alive || e.discs < d.cost || (!d.cost && flying >= RAPID_MAX)) return;
   e.discs -= d.cost;
+  Object.assign(d, { homing: has(e, "homing"), hit: [] }); // hit: who it went through
   d.mesh = new THREE.Mesh(decap ? bladeGeo : discGeo, glow(decap ? 0xff1744 : e.color, 0.8));
   d.mesh.scale.setScalar(d.size);
   scene.add(d.mesh);
@@ -387,9 +408,15 @@ function removeDisc(d) {
   discs.splice(discs.indexOf(d), 1);
 }
 
+const apart = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 function updateDiscs(dt) {
   for (const d of [...discs]) {
     const home = chest(d.owner.body);
+    if (d.homing && !d.returning) {
+      const prey = entities.filter((o) => o !== d.owner && o.alive && !d.hit.includes(o) && Math.abs(o.body.pos.y + CHEST - d.pos.y) < 1)
+        .sort((a, b) => apart(a.body.pos, d.pos) - apart(b.body.pos, d.pos))[0];
+      if (prey) steer(d, prey.body.pos, dt);
+    }
     stepDisc(d, home, dt);
     if (d.returning) {
       if (Math.hypot(d.pos.x - home.x, d.pos.y - home.y, d.pos.z - home.z) < 1) {
@@ -399,24 +426,47 @@ function updateDiscs(dt) {
       }
     } else {
       let zone = null;
-      const victim = entities.find((v) => v !== d.owner && v.alive && (zone = hitZone(d.prev, d.pos, v.body, d.size, now < v.fatUntil ? FAT : 1)));
+      const victim = entities.find((v) => v !== d.owner && v.alive && !d.hit.includes(v) && (zone = hitZone(d.prev, d.pos, v.body, d.size, has(v, "fat") ? FAT : 1)));
       if (victim) {
-        d.returning = true;
-        if (d.decap || zone === "neck") {
-          kill(victim, d.owner, "decap", d.vel);
+        d.hit.push(victim);
+        d.returning = !(d.decap || d.size > 1); // the decapitator and the giant discs cut through, on to the next
+        const strike = d.hit.length > 1;
+        if (has(victim, "shield")) {
+          delete victim.until.shield;
+          d.returning = true;
+        } else if (d.decap || zone === "neck") {
+          kill(victim, d.owner, "decap", d.vel, { rebounds: d.rebounds, strike });
         } else {
           knock(victim.body, d.vel);
           victim.knocks++; // a guest pushes its own player when it sees this count go up
           victim.knockDir = { x: d.vel.x, z: d.vel.z };
           victim.lastHitBy = d.owner;
           victim.lastHitAt = now;
+          victim.lastTricks = d.rebounds;
           bleed(chest(victim.body), 15, UP, 2, 4);
+          if (strike) tell("{K} fait un strike", { "{K}": d.owner }, "Strike !", true);
         }
       }
     }
     d.mesh.position.set(d.pos.x, d.pos.y, d.pos.z);
     d.mesh.rotation.y += 25 * dt;
   }
+}
+
+// What a player can catch: how long it lasts, how it shows, the line that tells it.
+const POWERS = {
+  giant: { time: BOOST_TIME, icon: "★", label: "Disques géants", took: "{K} a pris les disques géants" },
+  fat: { time: FAT_TIME, icon: "✖", label: "Énorme : cible facile", took: "{K} est devenu énorme" },
+  homing: { time: 15, icon: "🎯", color: 0x18ffff, label: "Tête chercheuse", took: "{K} a des disques à tête chercheuse" },
+  rapid: { time: 10, icon: "⚡", color: 0xff9100, label: "Rafale", took: "{K} lance en rafale" },
+  shield: { time: 30, icon: "🛡️", color: 0x82b1ff, label: "Bouclier", took: "{K} a un bouclier" },
+  ice: { time: 10, icon: "🧊", color: 0xe0f7fa, label: "Pieds glissants", took: "{K} a les pieds glissants" },
+};
+const ITEM_KINDS = ["homing", "rapid", "shield", "ice"]; // dropped here and there; the booster and the maluses have their places
+const has = (e, power) => now < (e.until[power] ?? 0);
+function give(e, power) {
+  e.until[power] = now + POWERS[power].time;
+  tell(POWERS[power].took, { "{K}": e });
 }
 
 // The booster: on one tower at a time, it makes the discs of whoever lands there giant; it comes back
@@ -446,74 +496,162 @@ const maluses = PADS.filter((p) => p.y === 0 && PLATFORMS[p.to].y === LEVEL).map
   const pl = platformUnder(p);
   const mesh = new THREE.Mesh(malusGeo, glow(0xd500f9, 1.5));
   scene.add(mesh);
-  return { x: (p.x + pl.x) / 2, y: 0, z: (p.z + pl.z) / 2, backAt: 0, mesh };
+  return { x: (p.x + pl.x) / 2, y: 0, z: (p.z + pl.z) / 2, pl, backAt: 0, mesh };
 });
+
+// The other bonus and malus: ITEMS_MAX at a time, a new one every ITEM_EVERY s, somewhere on the two lower floors.
+const ITEMS_MAX = 2;
+const ITEM_EVERY = 10;
+const items = []; // the host's: {power, x, y, z, pl}
+let itemAt = 5;
+let shownItems = []; // [power, x, y, z]: the host's items, or what it says of them
+const itemGeo = new THREE.OctahedronGeometry(0.5);
+const itemMeshes = [];
+
+// Now and then a platform of the two lower floors blinks for VANISH_WARN s, then is gone for VANISH_TIME s.
+const VANISH_EVERY = 15;
+const VANISH_WARN = 3;
+const VANISH_TIME = 6;
+let shaky = null; // the platform blinking, then gone
+let shakyAt = 0;
+let vanishAt = VANISH_EVERY;
 
 const standing = (spot, reach) => entities.find((e) => !e.empty && e.alive && Math.abs(e.body.pos.y - spot.y) < 0.5 &&
   Math.hypot(e.body.pos.x - spot.x, e.body.pos.z - spot.z) < reach);
 
-// The host hands out the booster and the maluses.
-function updatePickups() {
+// The host runs the arena: the platform that vanishes, the booster, the maluses, the items.
+function updateArena() {
+  if (!shaky && now > vanishAt) {
+    shaky = PLATFORMS[1 + Math.floor(Math.random() * 8)];
+    shakyAt = now;
+  }
+  if (shaky) shaky.gone = now > shakyAt + VANISH_WARN;
+  if (shaky && now > shakyAt + VANISH_WARN + VANISH_TIME) {
+    shaky.gone = false;
+    shaky = null;
+    vanishAt = now + VANISH_EVERY;
+  }
   if (!boostAt && now > boostBackAt) boostAt = TOWERS[Math.floor(Math.random() * TOWERS.length)];
   const taker = boostAt && standing(boostAt, 1.5);
   if (taker) {
-    taker.giantUntil = now + BOOST_TIME;
+    give(taker, "giant");
     boostAt = null;
     boostBackAt = now + BOOST_RESPAWN;
-    feed("{K} a pris les disques géants", { "{K}": taker });
   }
   for (const m of maluses) {
-    const fat = now >= m.backAt && standing(m, 1);
+    const fat = now >= m.backAt && !m.pl.gone && standing(m, 1);
     if (!fat) continue;
-    fat.fatUntil = now + FAT_TIME;
+    give(fat, "fat");
     m.backAt = now + MALUS_RESPAWN;
-    feed("{K} est devenu énorme", { "{K}": fat });
   }
+  if (items.length < ITEMS_MAX && now > itemAt) {
+    itemAt = now + ITEM_EVERY;
+    const pl = PLATFORMS[Math.floor(Math.random() * 9)], a = Math.random() * 2 * Math.PI; // the center, the ground ring, the diagonals
+    const power = ITEM_KINDS[Math.floor(Math.random() * ITEM_KINDS.length)];
+    items.push({ power, x: pl.x + (Math.cos(a) * pl.r) / 2, y: pl.y, z: pl.z + (Math.sin(a) * pl.r) / 2, pl });
+  }
+  for (const it of [...items]) {
+    const catcher = !it.pl.gone && standing(it, 1);
+    if (catcher) give(catcher, it.power);
+    if (catcher || it.pl.gone) items.splice(items.indexOf(it), 1);
+  }
+  shownItems = items.map((it) => [it.power, it.x, it.y, it.z]);
 }
 
-function showPickups(dt) {
+function showArena(dt) {
   booster.visible = !!boostAt;
   if (boostAt) booster.position.set(boostAt.x, boostAt.y, boostAt.z);
   booster.rotation.y += 3 * dt; // the beam is round: only the disc shows it turning
   for (const m of maluses) {
-    m.mesh.visible = now >= m.backAt;
+    m.mesh.visible = now >= m.backAt && !m.pl.gone;
     m.mesh.position.set(m.x, 1 + 0.3 * Math.sin(now * 4), m.z);
     m.mesh.rotation.y += 2 * dt;
+  }
+  while (itemMeshes.length < shownItems.length) {
+    const mesh = new THREE.Mesh(itemGeo, glow(0xffffff, 1.5));
+    scene.add(mesh);
+    itemMeshes.push(mesh);
+  }
+  itemMeshes.forEach((mesh, i) => {
+    const it = shownItems[i];
+    mesh.visible = !!it;
+    if (!it) return;
+    mesh.material.color.setHex(POWERS[it[0]].color);
+    mesh.material.emissive.setHex(POWERS[it[0]].color);
+    mesh.position.set(it[1], it[2] + 1 + 0.3 * Math.sin(now * 4 + i), it[3]);
+    mesh.rotation.y += 2 * dt;
+  });
+  // The shaky platform blinks, then is gone with its pads and walls.
+  const blink = shaky && !shaky.gone && Math.sin(now * 20) > 0;
+  platformParts.forEach((parts, i) => parts.forEach((m) => (m.visible = !PLATFORMS[i].gone && !(blink && PLATFORMS[i] === shaky))));
+  for (const e of entities) e.bubble.visible = !e.empty && e.alive && has(e, "shield");
+}
+
+// An event that is no death, told by the host to everyone: the line, the card if it is an exploit,
+// the crowd if loud. The guests get the last few in each state.
+const news = [];
+let newsId = 0;
+function tell(text, players = {}, shout = "", loud = false) {
+  const n = { id: ++newsId, text, who: Object.fromEntries(Object.entries(players).map(([k, e]) => [k, entities.indexOf(e)])), shout, loud };
+  news.push(n);
+  if (news.length > 8) news.shift();
+  showNews(n);
+}
+function showNews(n) {
+  const players = Object.fromEntries(Object.entries(n.who).map(([k, i]) => [k, entities[i]]));
+  feed(n.text, players, n.shout);
+  if (n.shout) splash(players["{K}"], n.shout);
+  if (n.loud) {
+    roar();
+    cheerUntil = now + 4;
   }
 }
 
 // Deaths, and the gore that comes with a decapitation: the host decides them, everyone shows them.
-function kill(e, killer, how, dir) {
+// rebounds: the disc's before the hit, a trickshot; strike: the disc's second victim or more.
+function kill(e, killer, how, dir, { rebounds = 0, strike = false } = {}) {
   e.alive = false;
   e.respawnAt = now + (how === "decap" ? DECAP_RESPAWN_DELAY : RESPAWN_DELAY);
   discs.filter((d) => d.owner === e).forEach(removeDisc);
-  const scores = killer && inMatch && !winner;
+  const counts = inMatch && !winner;
+  const scores = killer && counts;
   const regicide = e === leader();
+  const others = entities.filter((o) => !o.empty && o !== killer);
+  const outsider = scores && others.length >= 2 && others.every((o) => killer.score < o.score); // the last of all
   const shouts = [];
   e.streak = 0;
   if (killer) {
     killer.streak++;
     const bonus = Math.min(killer.streak - 1, MAX_STREAK_BONUS);
-    if (scores) killer.score += POINTS[how] + bonus + (regicide ? REGICIDE_BONUS : 0);
+    const trick = Math.min(rebounds, MAX_TRICK_BONUS);
+    if (scores) killer.score += POINTS[how] + bonus + trick + (regicide ? REGICIDE_BONUS : 0);
     if (scores && !firstBlood) shouts.push("Premier sang !");
     firstBlood ||= scores;
+    if (strike) shouts.push("Strike !");
+    if (trick) shouts.push(`Trickshot !${scores ? ` +${trick}` : ""}`);
     if (bonus) shouts.push(STREAK_SHOUTS[Math.min(killer.streak, STREAK_SHOUTS.length - 1)] + (scores ? ` +${bonus}` : ""));
     if (regicide) shouts.push(`Régicide !${scores ? ` +${REGICIDE_BONUS}` : ""}`);
+    if (outsider) shouts.push("Outsider !");
   } else {
-    shouts.push("Humiliation !");
+    if (counts) e.score -= 1; // a fall nobody caused: a suicide
+    shouts.push(`Humiliation !${counts ? " -1" : ""}`);
   }
-  Object.assign(e, { how, killer, dir: { x: dir?.x ?? 0, z: dir?.z ?? 0 }, shout: shouts.join(" ") });
-  showDeath(e, killer, how, e.dir, e.shout);
+  const boo = !!killer && killer === leader(); // the crowd boos the leader's kills
+  Object.assign(e, { how, killer, boo, dir: { x: dir?.x ?? 0, z: dir?.z ?? 0 }, shout: shouts.join(" ") });
+  showDeath(e, killer, how, e.dir, e.shout, boo);
   if (scores && killer.score >= WIN_SCORE) {
     winner = killer;
     nextMatchAt = now + MATCH_PAUSE;
     showWinner(winner);
+  } else if (scores && killer.score >= MATCH_POINT && !killer.matchPoint) {
+    killer.matchPoint = true;
+    setTimeout(() => tell("{K} a balle de match", { "{K}": killer }, "Balle de match !", true), 2000); // after the card of the kill
   }
 }
 
 function launchMatch() {
   [...discs].forEach(removeDisc);
-  for (const e of entities) if (!e.empty) spawn(Object.assign(e, { score: 0, streak: 0 }));
+  for (const e of entities) if (!e.empty) spawn(Object.assign(e, { score: 0, streak: 0, matchPoint: false }));
   firstBlood = false;
   setMatch(true);
 }
@@ -543,7 +681,7 @@ function showWinner(e) {
   }
 }
 
-function showDeath(e, killer, how, dir, shout) {
+function showDeath(e, killer, how, dir, shout, boo) {
   const lines = how === "decap" ? DECAP_LINES : killer ? PUSH_LINES : FALL_LINES;
   // Picked from the death count, so that every player reads the same line.
   feed(lines[(e.life + entities.indexOf(e)) % lines.length], { "{K}": killer, "{V}": e }, shout);
@@ -551,12 +689,17 @@ function showDeath(e, killer, how, dir, shout) {
   if (e === me) {
     me.group.visible = true;
     banner(how === "decap" ? `Décapité par ${killer.alias}` : killer ? `Éjecté par ${killer.alias}` : "Tu es tombé");
+    if (killer && killer !== me) {
+      replay = { killer, from: now, lead: how === "fall" ? 3 : 1.5 }; // a fall comes long after the push
+      $("replay").textContent = `Replay — vu par ${killer.alias}`;
+    }
   }
   if (how === "decap") {
     decapitate(e, dir);
-    roar();
     cheerUntil = now + 4;
   }
+  if (boo) roar(true);
+  else if (how === "decap" || shout.includes("Outsider")) roar();
   // Solo only: the host's slow motion would slow the world under the guests' feet.
   const solo = !joining && !entities.some((o) => o.conn);
   if (how === "decap" && solo && (e === me || killer === me)) slowUntil = performance.now() + 1500;
@@ -597,6 +740,7 @@ function updateCorpse(e, dt) {
   else e.group.rotation.x = Math.max(-Math.PI / 2, e.group.rotation.x - 3 * dt);
 }
 
+const KICK_SPEED = 11;
 function updateHeads(dt) {
   for (const h of flyingHeads) {
     const m = h.owner.head;
@@ -613,6 +757,19 @@ function updateHeads(dt) {
       bleed(m.position, 20, UP, 3, 4);
     }
     if (h.vel.lengthSq() > 4) bleed(m.position, 3, UP, 1, 2);
+    // Whoever walks into a head on the ground kicks it; into the void, a penalty.
+    const kicker = ground !== undefined && m.position.y < ground + 0.6 && now > (h.kickAt ?? 0) &&
+      entities.find((e) => !e.empty && e.alive && e.body && Math.abs(e.body.pos.y - ground) < 0.5 && apart(e.body.pos, m.position) < 0.9);
+    if (kicker) {
+      const len = apart(m.position, kicker.body.pos) || 1;
+      h.vel.set(((m.position.x - kicker.body.pos.x) / len) * KICK_SPEED, 7, ((m.position.z - kicker.body.pos.z) / len) * KICK_SPEED);
+      Object.assign(h, { kicker, kickAt: now + 0.3 });
+      bleed(m.position, 10, UP, 3, 4);
+    }
+    if (!joining && h.kicker && !h.scored && m.position.y < FALL_DEATH_Y) {
+      h.scored = true;
+      tell("{K} a shooté la tête de {V} dans le vide", { "{K}": h.kicker, "{V}": h.owner }, "Pénalty !", true);
+    }
   }
 }
 
@@ -714,7 +871,11 @@ function think(e) {
   const f = forward(e.yaw);
   let wish = { x: -f.z * ai.strafe, z: f.x * ai.strafe };
   const pl = platformUnder(b.pos);
-  if (pl && Math.hypot(b.pos.x - pl.x, b.pos.z - pl.z) > pl.r - 1.3) {
+  const exit = pl === shaky && PADS.filter((p) => platformUnder(p) === pl).sort((p, q) => apart(p, b.pos) - apart(q, b.pos))[0];
+  if (exit) {
+    const len = apart(exit, b.pos) || 1; // off the platform about to vanish, by its nearest pad
+    wish = { x: (exit.x - b.pos.x) / len, z: (exit.z - b.pos.z) / len };
+  } else if (pl && Math.hypot(b.pos.x - pl.x, b.pos.z - pl.z) > pl.r - 1.3) {
     const len = Math.hypot(pl.x - b.pos.x, pl.z - b.pos.z);
     wish = { x: (pl.x - b.pos.x) / len, z: (pl.z - b.pos.z) / len };
   }
@@ -862,9 +1023,9 @@ function announce(text, shout = "") {
 }
 
 // The crowd at a decapitation, made up on the spot: hundreds of claps, and a chorus of voices
-// yelling « ouais » that rises then dies down, over the rumble of the stands.
+// yelling « ouais » that rises then dies down, over the rumble of the stands. jeer: no claps, a low « hou » that sinks.
 const ROAR_TIME = 3.5;
-function roar() {
+function roar(jeer = false) {
   if (muted || !window.AudioContext) return;
   crowd ??= new AudioContext();
   crowd.resume();
@@ -875,7 +1036,7 @@ function roar() {
   // The claps: short bursts of noise, thick at first, then fewer and fewer.
   const claps = crowd.createBuffer(1, rate * ROAR_TIME, rate);
   const data = claps.getChannelData(0);
-  for (let c = 0; c < 500; c++) {
+  for (let c = 0; c < (jeer ? 0 : 500); c++) {
     const at = Math.floor(Math.random() ** 2 * (ROAR_TIME - 0.1) * rate), loud = 0.2 + Math.random() * 0.5;
     for (let i = 0; i < 0.02 * rate; i++) data[at + i] += (Math.random() * 2 - 1) * loud * Math.exp(-i / (0.003 * rate));
   }
@@ -894,9 +1055,9 @@ function roar() {
   const band = crowd.createBiquadFilter();
   band.type = "bandpass";
   band.Q.value = 0.7;
-  band.frequency.setValueAtTime(400, t);
-  band.frequency.linearRampToValueAtTime(1100, t + 0.4);
-  band.frequency.linearRampToValueAtTime(600, t + ROAR_TIME);
+  band.frequency.setValueAtTime(jeer ? 200 : 400, t);
+  band.frequency.linearRampToValueAtTime(jeer ? 500 : 1100, t + 0.4);
+  band.frequency.linearRampToValueAtTime(jeer ? 250 : 600, t + ROAR_TIME);
   const swell = crowd.createGain();
   swell.gain.setValueAtTime(0.001, t);
   swell.gain.exponentialRampToValueAtTime(0.8, t + 0.3);
@@ -906,16 +1067,17 @@ function roar() {
   // The yells: voices at random pitches, each going up into its « ouais » and down again.
   const vowel = crowd.createBiquadFilter();
   vowel.type = "bandpass";
-  vowel.frequency.value = 800;
+  vowel.frequency.value = jeer ? 450 : 800;
   vowel.Q.value = 1.2;
   vowel.connect(out);
   for (let v = 0; v < 24; v++) {
     const voice = crowd.createOscillator(), loud = crowd.createGain();
-    const start = t + Math.random() * 0.4, end = start + 1 + Math.random() * 1.5, pitch = 180 + Math.random() * 320;
+    const start = t + Math.random() * 0.4, end = start + 1 + Math.random() * 1.5;
+    const pitch = jeer ? 110 + Math.random() * 140 : 180 + Math.random() * 320;
     voice.type = "sawtooth";
     voice.frequency.setValueAtTime(pitch, start);
-    voice.frequency.linearRampToValueAtTime(pitch * 1.5, start + 0.25);
-    voice.frequency.linearRampToValueAtTime(pitch * 0.9, end);
+    voice.frequency.linearRampToValueAtTime(pitch * (jeer ? 1.1 : 1.5), start + 0.25);
+    voice.frequency.linearRampToValueAtTime(pitch * (jeer ? 0.6 : 0.9), end);
     loud.gain.setValueAtTime(0.001, start);
     loud.gain.exponentialRampToValueAtTime(0.03, start + 0.1);
     loud.gain.exponentialRampToValueAtTime(0.001, end);
@@ -958,8 +1120,9 @@ function drawRadar() {
   radar.arc(RADAR, RADAR, RADAR, 0, 2 * Math.PI);
   radar.clip();
   for (const pl of PLATFORMS) {
+    if (pl.gone) continue;
     radar.fillStyle = "#3a3f4b";
-    radar.strokeStyle = css(FLOOR_COLORS[Math.round(pl.y / LEVEL)]);
+    radar.strokeStyle = pl === shaky && Math.sin(now * 20) > 0 ? "#ff1744" : css(FLOOR_COLORS[Math.round(pl.y / LEVEL)]);
     radar.lineWidth = 5;
     radar.beginPath();
     radar.arc(...spot(pl), pl.r * RADAR_SCALE, 0, 2 * Math.PI);
@@ -975,7 +1138,9 @@ function drawRadar() {
   }
   radar.fillStyle = "#d500f9";
   radar.font = "bold 30px system-ui";
-  for (const m of maluses) if (now >= m.backAt) radar.fillText("✖", ...spot(m));
+  for (const m of maluses) if (now >= m.backAt && !m.pl.gone) radar.fillText("✖", ...spot(m));
+  radar.font = "34px system-ui";
+  for (const [power, ...at] of shownItems) radar.fillText(POWERS[power].icon, ...spot({ x: at[0], z: at[2] }));
   const top = leader();
   for (const e of entities) {
     if (e.empty || !e.alive || !e.body || e === me) continue;
@@ -988,6 +1153,12 @@ function drawRadar() {
     radar.lineWidth = 5;
     radar.strokeStyle = e === top ? "#ffd700" : floor > 0 ? "#fff" : "#000";
     radar.stroke();
+    if (inMatch && e.score >= MATCH_POINT) { // match point: a red ring that beats
+      radar.strokeStyle = "#ff1744";
+      radar.beginPath();
+      radar.arc(x, y, 24 + 5 * Math.sin(now * 8), 0, 2 * Math.PI);
+      radar.stroke();
+    }
     // The alias above the dot, outlined to read over the platforms.
     radar.font = "bold 26px system-ui";
     radar.textBaseline = "bottom";
@@ -1057,7 +1228,7 @@ function renderScores() {
   $("scores").append(title);
   for (const e of entities.filter((o) => !o.empty).sort((a, b) => b.score - a.score)) {
     const line = document.createElement("div");
-    line.textContent = `${e === top ? "👑 " : ""}${e === me ? "▶ " : ""}${e.alias}  ${e.score}`;
+    line.textContent = `${e === top ? "👑 " : ""}${inMatch && e.score >= MATCH_POINT ? "🔥 " : ""}${e === me ? "▶ " : ""}${e.alias}  ${e.score}`;
     line.style.color = css(e.color);
     $("scores").append(line);
   }
@@ -1099,13 +1270,18 @@ function hostState() {
   return {
     ents: entities.map((e) => e.empty ? null : {
       name: e.name, alias: e.alias, bot: e.bot, x: e.body.pos.x, y: e.body.pos.y, z: e.body.pos.z, yaw: e.yaw,
-      alive: e.alive, life: e.life, discs: e.discs, score: e.score, giant: Math.max(0, e.giantUntil - now), fat: Math.max(0, e.fatUntil - now),
+      alive: e.alive, life: e.life, discs: e.discs, score: e.score, boo: e.boo,
+      until: Object.fromEntries(Object.entries(e.until).filter(([, t]) => t > now).map(([p, t]) => [p, t - now])),
       knocks: e.knocks, kx: e.knockDir.x, kz: e.knockDir.z,
       how: e.how, shout: e.shout, killer: entities.indexOf(e.killer), dx: e.dir?.x ?? 0, dz: e.dir?.z ?? 0,
     }),
     discs: discs.map((d) => [d.pos.x, d.pos.y, d.pos.z, d.decap ? 1 : 0, entities.indexOf(d.owner), d.size]),
     boost: PLATFORMS.indexOf(boostAt),
     maluses: maluses.map((m) => now >= m.backAt),
+    items: shownItems,
+    shaky: PLATFORMS.indexOf(shaky),
+    gone: !!shaky?.gone,
+    news,
     winner: entities.indexOf(winner),
     match: inMatch,
   };
@@ -1133,6 +1309,7 @@ function guestSays(conn, msg) {
   if (!e) return;
   e.seenAt = performance.now();
   e.yaw = msg.yaw;
+  e.pitch = msg.pitch;
   const name = cleanName(msg.name);
   if (name && name !== e.name) {
     e.name = e.alias = name;
@@ -1157,7 +1334,8 @@ function guestHears(s) {
       if (!e.empty) vacate(e);
       return;
     }
-    Object.assign(e, { empty: false, name: n.name, alias: n.alias, bot: n.bot, score: n.score, discs: n.discs, giantUntil: now + n.giant, fatUntil: now + n.fat });
+    Object.assign(e, { empty: false, name: n.name, alias: n.alias, bot: n.bot, score: n.score, discs: n.discs,
+      until: Object.fromEntries(Object.entries(n.until).map(([p, t]) => [p, now + t])) });
     if (n.life !== e.life) {
       Object.assign(e, { life: n.life, alive: true, body: newBody(n), yaw: n.yaw, pitch: 0, knocks: n.knocks });
       resetAvatar(e);
@@ -1173,7 +1351,7 @@ function guestHears(s) {
     }
     if (!n.alive && e.alive) {
       e.alive = false;
-      showDeath(e, entities[n.killer] ?? null, n.how, { x: n.dx, z: n.dz }, n.shout);
+      showDeath(e, entities[n.killer] ?? null, n.how, { x: n.dx, z: n.dz }, n.shout, n.boo);
     }
   });
   if (s.match !== inMatch) setMatch(s.match);
@@ -1187,7 +1365,14 @@ function guestHears(s) {
   showDiscs(s.discs);
   boostAt = PLATFORMS[s.boost] ?? null;
   maluses.forEach((m, i) => (m.backAt = s.maluses[i] ? 0 : Infinity));
+  shownItems = s.items;
+  if (shaky) shaky.gone = false;
+  shaky = PLATFORMS[s.shaky] ?? null;
+  if (shaky) shaky.gone = s.gone;
+  for (const n of s.news) if (heard !== null && n.id > heard) showNews(n);
+  heard = s.news.at(-1)?.id ?? heard ?? 0; // at the first state, what happened before is not news
 }
+let heard = null; // the last news shown
 
 // A guest's discs are only meshes where the host says they are.
 const netDiscs = [];
@@ -1220,7 +1405,8 @@ function hostFrame(dt) {
         stepBody(e.body, wish, jump, dt);
       }
       if (e.body.pos.y < FALL_DEATH_Y) {
-        kill(e, e.lastHitBy && now - e.lastHitAt < BLAME_WINDOW ? e.lastHitBy : null, "fall");
+        const pusher = e.lastHitBy && now - e.lastHitAt < BLAME_WINDOW ? e.lastHitBy : null;
+        kill(e, pusher, "fall", null, { rebounds: pusher ? e.lastTricks : 0 });
       }
     } else {
       stepBody(e.body, STILL, false, dt);
@@ -1229,10 +1415,11 @@ function hostFrame(dt) {
     }
     e.group.position.set(e.body.pos.x, e.body.pos.y, e.body.pos.z);
     e.group.rotation.y = e.yaw;
-    e.group.scale.setScalar(now < e.fatUntil ? SCALE * FAT : SCALE);
+    e.group.scale.setScalar(has(e, "fat") ? SCALE * FAT : SCALE);
+    e.body.slippery = has(e, "ice");
   }
   updateDiscs(dt);
-  updatePickups();
+  updateArena();
   for (const e of entities) if (e.conn && performance.now() - e.seenAt > GUEST_TIMEOUT) guestLeaves(e.conn);
   sendIn -= dt;
   if (sendIn > 0) return;
@@ -1256,12 +1443,13 @@ function guestFrame(dt) {
     if (!e.alive) updateCorpse(e, dt);
     e.group.position.set(e.body.pos.x, e.body.pos.y, e.body.pos.z);
     e.group.rotation.y = e.yaw;
-    e.group.scale.setScalar(now < e.fatUntil ? SCALE * FAT : SCALE);
+    e.group.scale.setScalar(has(e, "fat") ? SCALE * FAT : SCALE);
+    e.body.slippery = has(e, "ice");
   }
   netDiscs.forEach((mesh) => (mesh.rotation.y += 25 * dt));
   if (!host?.open || !me.body) return;
   const p = me.body.pos;
-  host.send({ life: me.life, x: p.x, y: p.y, z: p.z, yaw: me.yaw, throws: myThrows, decaps: myDecaps, name: myName });
+  host.send({ life: me.life, x: p.x, y: p.y, z: p.z, yaw: me.yaw, pitch: me.pitch, throws: myThrows, decaps: myDecaps, name: myName });
 }
 
 if (joining) {
@@ -1290,6 +1478,77 @@ if (joining) {
   });
 }
 
+// The killcam: the last seconds kept frame by frame, to show a dead player their death through their
+// killer's eyes, from replay.lead s before it to REPLAY_AFTER s after. Over the live scene, put back after.
+const REPLAY_AFTER = 0.5;
+const tape = [];
+const ghostDiscs = [];
+const liveDiscs = () => (joining ? netDiscs : discs.map((d) => d.mesh));
+function record() {
+  tape.push({
+    at: now,
+    ents: entities.map((e) => ({
+      pos: e.group.position.clone(), quat: e.group.quaternion.clone(), scale: e.group.scale.x, visible: e.group.visible, yaw: e.yaw,
+      head: e.head.parent === e.group ? null : e.head.position.clone(),
+    })),
+    discs: liveDiscs().filter((m) => m.visible).map((m) => [m.position.clone(), m.scale.x, m.material.color.getHex(), m.geometry]),
+  });
+  while (tape[0].at < now - 4) tape.shift();
+}
+
+function playBack() {
+  const t = now - replay.lead;
+  const frame = tape.find((f) => f.at >= t) ?? tape.at(-1);
+  const saved = [];
+  const pose = (obj) => saved.push([obj, obj.position.clone(), obj.quaternion.clone(), obj.scale.clone(), obj.visible]);
+  entities.forEach((e, i) => {
+    const f = frame.ents[i];
+    pose(e.group);
+    e.group.position.copy(f.pos);
+    e.group.quaternion.copy(f.quat);
+    e.group.scale.setScalar(f.scale);
+    e.group.visible = (f.visible || e === me) && e !== replay.killer && !e.empty;
+    if (e.head.parent === e.group) return;
+    pose(e.head); // off its body now: where it was then, maybe still on the neck
+    if (f.head) e.head.position.copy(f.head);
+    else {
+      e.group.updateMatrixWorld();
+      e.group.localToWorld(e.head.position.set(0, HEAD_Y, 0));
+      e.head.quaternion.identity();
+    }
+  });
+  for (const m of liveDiscs()) {
+    pose(m);
+    m.visible = false;
+  }
+  while (ghostDiscs.length < frame.discs.length) {
+    const m = new THREE.Mesh(discGeo, glow(0xffffff, 0.8));
+    scene.add(m);
+    ghostDiscs.push(m);
+  }
+  ghostDiscs.forEach((m, i) => {
+    const d = frame.discs[i];
+    m.visible = !!d;
+    if (!d) return;
+    m.position.copy(d[0]);
+    m.scale.setScalar(d[1]);
+    m.material.color.setHex(d[2]);
+    m.material.emissive.setHex(d[2]);
+    m.geometry = d[3];
+  });
+  const k = frame.ents[entities.indexOf(replay.killer)];
+  camera.position.set(k.pos.x, k.pos.y + (EYE * k.scale) / SCALE, k.pos.z);
+  camera.rotation.set(-0.15, k.yaw, 0);
+  renderer.render(scene, camera);
+  for (const [obj, p, q, sc, v] of saved) {
+    obj.position.copy(p);
+    obj.quaternion.copy(q);
+    obj.scale.copy(sc);
+    obj.visible = v;
+  }
+  for (const m of ghostDiscs) m.visible = false;
+}
+
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const frame = Math.min(clock.getDelta(), 0.05);
@@ -1300,13 +1559,16 @@ renderer.setAnimationLoop(() => {
   updateHeads(dt);
   updateBlood(dt);
   updateFans();
-  showPickups(dt);
+  showArena(dt);
   drawRadar();
   pads.forEach((p) => (p.material.emissiveIntensity = 1.2 + 0.6 * Math.sin(now * 6)));
   $("discs").textContent = "●".repeat(me.discs ?? 0) + "○".repeat(MAX_DISCS - (me.discs ?? MAX_DISCS));
-  const left = (until) => (me.alive ? Math.ceil(until - now) : 0);
-  $("powers").textContent = [[me.giantUntil, "Disques géants"], [me.fatUntil, "Énorme : cible facile"]]
-    .filter(([until]) => left(until) > 0).map(([until, what]) => `${what} ${left(until)} s`).join(" · ");
+  $("powers").textContent = !me.alive ? "" : Object.entries(me.until).filter(([, until]) => until > now)
+    .map(([p, until]) => `${POWERS[p].icon} ${POWERS[p].label} ${Math.ceil(until - now)} s`).join(" · ");
+  record();
+  if (replay && now > replay.from + REPLAY_AFTER) replay = null;
+  $("replay").hidden = !replay;
+  if (replay) return playBack();
   if (me.body) updateCamera();
   renderer.render(scene, camera);
 });
