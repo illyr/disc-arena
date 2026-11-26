@@ -9,10 +9,13 @@
     canvas { display: block; }
     #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: #fff; }
     #discs { position: fixed; left: 24px; bottom: 20px; font-size: 32px; letter-spacing: 6px; }
-    #scores { position: fixed; right: 20px; top: 16px; text-align: right; line-height: 1.5; }
+    #scores { position: fixed; right: 16px; top: 12px; padding: 8px 14px; border-radius: 8px; background: #000a; text-align: right; line-height: 1.4; font-size: 22px; font-weight: 700; text-shadow: 0 0 4px #000; }
+    #scores > div:first-child { font-size: 13px; font-weight: 400; opacity: 0.8; }
+    #mute { position: fixed; left: 140px; bottom: 18px; z-index: 2; padding: 4px 10px; font-size: 22px; border: 0; border-radius: 8px; background: #fff2; cursor: pointer; }
     #feed { position: fixed; left: 20px; top: 16px; max-width: 45%; line-height: 1.4; text-shadow: 0 0 6px #000, 0 0 2px #000; pointer-events: none; }
     #feed > div { animation: fade 6s forwards; }
     #feed .event { font-size: 26px; font-weight: 600; }
+    #feed .shout { color: #ffd700; font-weight: 900; text-transform: uppercase; }
     @keyframes fade { 80% { opacity: 1; } 100% { opacity: 0; } }
     #banner { position: fixed; top: 30%; width: 100%; text-align: center; font-size: 36px; color: #ff1744; text-shadow: 0 0 12px #000; }
     #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center; overflow-y: auto; background: #07060fcc; cursor: pointer; text-align: center; }
@@ -42,13 +45,15 @@
   <div id="feed"></div>
   <div id="banner"></div>
   <div id="room"></div>
+  <button id="mute" title="Couper le son (M)"></button>
   <div id="start">
     <h1>Disc Arena</h1>
     <p>Clique pour jouer — Échap pour sortir</p>
-    <p>ZQSD / WASD : bouger · Espace : sauter · Souris : viser</p>
+    <p>ZQSD / WASD : bouger · Espace : sauter · Souris : viser · M : couper le son</p>
     <p>Clic gauche : disque (pousse dans le vide) · Clic droit : décapiteur (les 3 disques)</p>
-    <p>Les pads verts te propulsent vers une autre plateforme.</p>
+    <p>Les tremplins verts te propulsent vers une autre plateforme.</p>
     <p>Décapitation : 5 points · Éjection dans le vide : 1 point · Premier à 20 points</p>
+    <p>Bonus : +1 par victime d'affilée sans mourir (+3 max) · +2 pour faire tomber le 👑 meneur</p>
     <div id="lobby">
       <h2 id="lobby-title"></h2>
       <div id="players"></div>

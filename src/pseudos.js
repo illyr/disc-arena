@@ -45,7 +45,8 @@ export const PSEUDOS = [
   { name: "Sanglier du frisbee-golf", alias: "Gruik" },
 ];
 
-// What the feed says of a death, {K} the killer and {V} the victim, by their aliases.
+// What the feed says of a death, {K} the killer and {V} the victim, by their aliases. The referee
+// reads them with a French voice: French words only, or it spells the foreign ones letter by letter.
 export const DECAP_LINES = [
   "{K} a coupé {V} en deux",
   "{K} a décapité {V}",
@@ -54,7 +55,12 @@ export const DECAP_LINES = [
   "{V} a perdu la tête face à {K}",
   "{K} a dévissé {V}",
   "{K} a transformé {V} en fontaine",
-  "{K} a mis {V} en orbite (la tête seulement)",
+  "{K} a mis {V} en orbite, la tête seulement",
+  "{K} a étêté {V} proprement",
+  "{V} n'a plus toute sa tête, merci {K}",
+  "{K} a offert à {V} une coupe très courte",
+  "{V} se retrouve sans tête, signé {K}",
+  "{K} a livré {V} en deux colis",
 ];
 export const PUSH_LINES = [
   "{K} a jeté {V} dans le vide",
@@ -64,10 +70,20 @@ export const PUSH_LINES = [
   "{K} a offert un aller simple pour le vide à {V}",
   "{K} a poussé {V} dans le néant",
   "{V} a fait un plongeon offert par {K}",
+  "{K} a raccompagné {V} vers la sortie",
+  "{K} a fait découvrir la chute libre à {V}",
+  "{V} est descendu prendre l'air, poussé par {K}",
 ];
 export const FALL_LINES = [
   "{V} est tombé tout seul",
   "{V} a raté une marche",
   "{V} a voulu voir le fond",
-  "{V} a confondu le vide avec un pad",
+  "{V} a confondu le vide avec un tremplin",
+  "{V} s'est jeté dans le vide sans aide",
+  "{V} a glissé, tout seul, devant tout le monde",
+  "{V} a testé la gravité : elle fonctionne",
+  "{V} est parti sans dire au revoir",
 ];
+
+// What the referee shouts for kills in a row without dying, by their count.
+export const STREAK_SHOUTS = ["", "", "Doublé !", "Triplé !", "Massacre !", "Carnage !", "Monstrueux !"];

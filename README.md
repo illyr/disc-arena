@@ -20,9 +20,12 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | Espace | sauter : par-dessus un disque, ou pour lancer à hauteur de cou |
 | Clic gauche | disque : pousse la cible, rebondit 3 fois puis revient |
 | Clic droit | décapiteur : prend les 3 disques, tue d'un coup |
-| Pad vert | propulse vers une autre plateforme |
+| Tremplin vert | propulse vers une autre plateforme |
+| M ou 🔊 | couper le son |
 
-Un arbitre très sérieux annonce à voix haute chaque mort, le début et la fin des parties (synthèse vocale du navigateur).
+Un arbitre très sérieux annonce à voix haute chaque mort, le début et la fin des parties (synthèse vocale du navigateur),
+et les exploits : premier sang, doublé, triplé, massacre… Chaque victime d'affilée sans mourir rapporte 1 point de plus
+(3 au plus), faire tomber le meneur, qui porte une couronne, 2 points de plus.
 
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
 Une partie se joue en chacun pour soi : une décapitation vaut 5 points, éjecter quelqu'un dans le vide 1 point
