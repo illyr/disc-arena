@@ -50,13 +50,17 @@ La tête d'un décapité se shoote en marchant dessus ; dans le vide : « Et c'e
 Tué par un autre joueur, on revoit sa mort par ses yeux (« Killcam »).
 
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
+Un disque simple qui touche bas, dans les jambes (vise vers le bas, ou touche un joueur en plein saut), coupe une jambe au lieu de pousser,
+façon Chevalier noir des Monty Python : « C'est juste une égratignure ! ». Sur une jambe on avance à cloche-pied, plus lentement et en sautant moins haut ;
+sans jambes (« Match nul ! ») on rampe, encore plus lentement, sans sauter, jusqu'à la mort. Couper une jambe ne rapporte rien,
+mais qui la coupe touche le frag si la victime tombe ensuite.
 Une partie se joue en chacun pour soi : une décapitation vaut 5 frags, éjecter quelqu'un dans le vide 1 frag
 (tomber tout seul en partie coûte 1 frag). Le premier à 20 frags gagne.
 Avant chaque partie, l'échauffement : on joue sans marquer, puis l'hôte clique « Au combat ! », et après « 3, 2, 1, Fraggez ! » les frags comptent
 (Échap pour l'afficher) ; on y revient 6 s après chaque victoire.
 Autour de l'arène, des gradins pleins de spectateurs, qui sautent à chaque mort, et applaudissent et crient à chaque décapitation
 (son synthétisé dans le navigateur, coupé avec le reste par M).
-Chaque disque lancé siffle (le décapiteur plus grave, avec le tintement d'une lame), une décapitation fait un bruit mouillé et gargouillant,
+Chaque disque lancé siffle (le décapiteur plus grave, avec le tintement d'une lame), une décapitation ou une jambe coupée fait un bruit mouillé et gargouillant,
 synthétisés eux aussi, et d'autant plus faibles qu'ils sont loin.
 Chaque place a son look (couleur, motif, oreilles, nez, queue…), et la salle d'attente montre le portrait de chacun.
 Chacun y arrive avec un pseudo tiré au hasard et son alias court, qui sert en partie (`src/pseudos.js`, avec les

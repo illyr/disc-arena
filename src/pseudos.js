@@ -129,6 +129,6 @@ export const STREAK_SHOUTS = ["", "", "Doublé !", "Triplé !", "Série meurtri�
 // Every cry of the announcer, each recorded once in sounds/ by scripts/make-cries.mjs.
 export const CRIES = [...STREAK_SHOUTS.filter(Boolean), "Premier sang !", "En pleine tête !", "Chasseur de têtes !", "Brochette !",
   "Par la bande !", "Détrôné !", "Remontada !", "Un frag pour la gloire !", "Et c'est le buuut !", "Humiliation !",
-  "Tu as pris la tête !", "Tu as perdu la tête !", "Fraggez !", "Sans une égratignure !"];
+  "Tu as pris la tête !", "Tu as perdu la tête !", "Fraggez !", "Sans une égratignure !", "C'est juste une égratignure !", "Match nul !"];
 // A cry's file name: « Et c'est le buuut ! » → et-c-est-le-buuut.
 export const crySlug = (cry) => cry.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

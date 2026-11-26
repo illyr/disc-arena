@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ARENA_RADIUS, CHEST, FAT, GIANT, DISC_SPEED, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
+  ARENA_RADIUS, CHEST, FAT, LEGS_TOP, GIANT, DISC_SPEED, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
   hitZone, knock, newBody, newDisc, platformUnder, segmentHits, steer, stepBody, stepDisc,
 } from "../src/rules.js";
 
@@ -79,12 +79,31 @@ test("a player running against the push stays on the center platform", () => {
   assert.ok(b.onGround);
 });
 
-test("a disc at chest height hits the body, one thrown from a jump the neck, one higher nothing", () => {
+test("a disc at chest height hits the body, one thrown from a jump the neck, one higher nothing, one low the legs", () => {
   const target = newBody(PLATFORMS[0]);
   const at = (y) => hitZone({ x: -1, y, z: 0 }, { x: 1, y, z: 0 }, target);
   assert.equal(at(CHEST), "body");
+  assert.equal(at(LEGS_TOP - 0.2), "legs");
   assert.equal(at(NECK_BOTTOM + 0.3), "neck");
   assert.equal(at(HEAD_TOP + 0.1), null);
+});
+
+test("on one leg a player hops slower, on none it crawls slower still and cannot jump", () => {
+  const run = (legs, jump) => {
+    const b = newBody(PLATFORMS[0]);
+    b.legs = legs;
+    let top = 0;
+    for (let i = 0; i < 30; i++) {
+      stepBody(b, { x: 1, z: 0 }, jump, DT);
+      top = Math.max(top, b.pos.y);
+    }
+    return { dx: b.pos.x - PLATFORMS[0].x, top };
+  };
+  const two = run(2, false), one = run(1, false), none = run(0, true);
+  assert.equal(two.top, PLATFORMS[0].y);
+  assert.ok(one.top > PLATFORMS[0].y, "hops");
+  assert.ok(one.dx < two.dx && none.dx < one.dx, "slower and slower");
+  assert.equal(none.top, PLATFORMS[0].y, "no jump");
 });
 
 test("a jump clears a disc flying at chest height", () => {

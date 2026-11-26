@@ -12,6 +12,9 @@ export const CHEST = 1.55; // the discs fly flat, at chest height
 export const HIT_RADIUS = 0.7;
 export const NECK_BOTTOM = 2.15; // above it, up to the top of the head, a disc cuts the head off
 export const HEAD_TOP = 3.65;
+export const LEGS_TOP = 0.6; // below it, a plain disc cuts a leg off
+export const HOP_SPEED = 4; // on one leg, a player moves by little hops
+export const LEG_SPEED = [0.35, 0.6, 1]; // the running speed with 0, 1 or 2 legs
 export const ARENA_RADIUS = 30; // the wall the discs bounce on
 export const DISC_SPEED = 24;
 export const DISC_LIFE = 3; // seconds before a disc flies home
@@ -107,15 +110,19 @@ export function newBody(platform) {
 }
 
 // wish: the wanted direction on the ground, of length 0 to 1. On slippery feet, the speed follows it slowly.
+// b.legs: 2 runs and jumps; 1 hops, slower; 0 crawls, slower still, and jumps no more.
 export function stepBody(b, wish, jump, dt) {
+  const legs = b.legs ?? 2;
   if (b.onGround) {
     const grip = b.slippery ? 1 - Math.exp(-ICE_GRIP * dt) : 1;
-    b.vel.x += (wish.x * RUN_SPEED - b.vel.x) * grip;
-    b.vel.z += (wish.z * RUN_SPEED - b.vel.z) * grip;
+    const speed = RUN_SPEED * LEG_SPEED[legs];
+    b.vel.x += (wish.x * speed - b.vel.x) * grip;
+    b.vel.z += (wish.z * speed - b.vel.z) * grip;
     const k = Math.exp(-PUSH_DECAY * dt);
     b.push.x *= k;
     b.push.z *= k;
-    if (jump) b.vel.y = JUMP_SPEED;
+    if (jump && legs) b.vel.y = legs > 1 ? JUMP_SPEED : JUMP_SPEED * 0.7;
+    else if (legs === 1 && (wish.x || wish.z)) b.vel.y = HOP_SPEED;
   }
   b.vel.y -= GRAVITY * dt;
   const was = b.pos.y;
@@ -254,12 +261,13 @@ export function segmentHits(a, b, c, radius) {
   return Math.hypot(a.x + abx * t - c.x, a.y + aby * t - c.y, a.z + abz * t - c.z) < radius;
 }
 
-// Where a disc's move in one frame hits a player: null, "body", or "neck" (the long neck and the head).
+// Where a disc's move in one frame hits a player: null, "legs", "body", or "neck" (the long neck and the head).
 // size: the disc's, a giant one hits further from its line. scale: the body's, a fat one is hit higher and wider.
 export function hitZone(a, b, body, size = 1, scale = 1) {
   const y = ((a.y + b.y) / 2 - body.pos.y) / scale;
   if (y < 0 || y > HEAD_TOP) return null;
   const flat = (p) => ({ x: p.x, y: 0, z: p.z });
   if (!segmentHits(flat(a), flat(b), flat(body.pos), HIT_RADIUS * scale + DISC_RADIUS * (size - 1))) return null;
-  return y >= NECK_BOTTOM ? "neck" : "body";
+  // The legs not scaled: a fat player's huge legs would take every flat disc, and never be pushed.
+  return y >= NECK_BOTTOM ? "neck" : y * scale < LEGS_TOP ? "legs" : "body";
 }

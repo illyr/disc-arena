@@ -163,6 +163,7 @@ function updateFans() {
 const NECK_BASE = 1.6;
 const NECK_TOP = 2.35;
 const HEAD_Y = 2.55;
+const STUMP = 0.2; // under the body, what a player without legs sinks by
 const skin = new THREE.MeshStandardMaterial({ color: 0xf1c27d });
 const white = new THREE.MeshStandardMaterial({ color: 0xffffff });
 const dark = new THREE.MeshStandardMaterial({ color: 0x111111 });
@@ -243,6 +244,8 @@ function makeAvatar(look) {
   part(new THREE.CapsuleGeometry(0.35, 0.8, 4, 12), fabric, group, 0, 0.95, 0);
   part(new THREE.CylinderGeometry(0.07, 0.09, NECK_TOP - NECK_BASE, 10), skin, group, 0, (NECK_BASE + NECK_TOP) / 2, 0);
   const head = part(ball(0.25), skin, group, 0, HEAD_Y, 0);
+  // Bare legs, cut off by the low discs: the second one goes first.
+  const limbs = [-1, 1].map((side) => part(new THREE.CylinderGeometry(0.1, 0.08, 0.5, 10), skin, group, side * 0.17, 0.25, 0));
   // Worn by the leader only, oversized to be seen across the arena; it flies off with the head.
   const crown = new THREE.Group();
   crown.position.y = 0.32;
@@ -284,7 +287,7 @@ function makeAvatar(look) {
   const bubble = part(ball(1.5), new THREE.MeshBasicMaterial({ color: 0x82b1ff, transparent: true, opacity: 0.25, depthWrite: false }), group, 0, 1.3, 0);
   bubble.visible = false;
   scene.add(group);
-  return { group, head, crown, bubble };
+  return { group, head, crown, bubble, limbs };
 }
 
 const params = new URLSearchParams(location.search);
@@ -293,7 +296,7 @@ const joining = params.get("room"); // a code: join that room; none: host one
 const BOTS = joining ? 0 : Math.min(Number(params.get("bots")) || 0, NAMES.length - 1);
 const entities = NAMES.map((name, i) => ({
   name, alias: name, color: COLORS[i], bot: i > 0 && i <= BOTS, empty: !!joining || i > BOTS,
-  score: 0, streak: 0, heads: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, until: {}, ...makeAvatar(LOOKS[i]),
+  score: 0, streak: 0, heads: 0, legs: 2, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, until: {}, ...makeAvatar(LOOKS[i]),
 }));
 entities.forEach((e) => (e.group.visible = !e.empty));
 
@@ -350,7 +353,7 @@ function spawn(e) {
   const free = low.filter((pl) => !taken(pl));
   const pl = (free.length ? free : low)[Math.floor(Math.random() * (free.length || low.length))];
   Object.assign(e, {
-    body: newBody(pl), alive: true, life: e.life + 1, discs: MAX_DISCS, yaw: Math.atan2(pl.x, pl.z), pitch: 0,
+    body: newBody(pl), alive: true, life: e.life + 1, legs: 2, discs: MAX_DISCS, yaw: Math.atan2(pl.x, pl.z), pitch: 0,
     lastHitBy: null, lastHitAt: 0, until: {}, lastTricks: 0, ai: { throwAt: now + 1 + Math.random(), shotAt: 0, turnAt: 0, strafe: 0 },
   });
   resetAvatar(e);
@@ -365,6 +368,7 @@ function resetAvatar(e) {
   e.head.position.set(0, HEAD_Y, 0);
   e.head.rotation.set(0, 0, 0);
   e.head.scale.setScalar(1); // scene.attach gave it the scale of the group
+  e.limbs.forEach((m, k) => (m.visible = k < e.legs));
   e.group.visible = e !== me;
   if (e === me) replay = null;
   const i = flyingHeads.findIndex((h) => h.owner === e);
@@ -442,6 +446,12 @@ function updateDiscs(dt) {
           d.returning = true;
         } else if (d.decap || zone === "neck") {
           kill(victim, d.owner, "decap", d.vel, { rebounds: d.rebounds, strike });
+        } else if (zone === "legs" && victim.legs) {
+          // The Black Knight: no push, no frag, a leg less; who finishes it off scores.
+          Object.assign(victim, { lastHitBy: d.owner, lastHitAt: now, lastTricks: d.rebounds });
+          loseLeg(victim, victim.legs - 1);
+          tell(victim.legs ? "{K} a coupé une jambe à {V}" : "{K} a coupé l'autre jambe à {V}", { "{K}": d.owner, "{V}": victim },
+            victim.legs ? "C'est juste une égratignure !" : "Match nul !", true);
         } else {
           knock(victim.body, d.vel);
           victim.knocks++; // a guest pushes its own player when it sees this count go up
@@ -807,6 +817,15 @@ scene.add(dropMesh, stainMesh);
 const dummy = new THREE.Object3D();
 let stainCount = 0;
 
+// A leg off, on the host and on its guests: the stump spurts, the leg is gone.
+function loseLeg(e, legs) {
+  e.legs = legs;
+  e.limbs.forEach((m, k) => (m.visible = k < legs)); // a guest may get both cuts in one state
+  const hip = { x: e.body.pos.x, y: e.body.pos.y + 0.3, z: e.body.pos.z };
+  bleed(hip, 150, UP, 5, 5);
+  splat(hip);
+}
+
 // count drops from at, along dir at about speed, scattered by spread on each axis.
 function bleed(at, count, dir, speed, spread) {
   for (let i = 0; i < count && drops.length < MAX_DROPS; i++) {
@@ -1002,7 +1021,7 @@ function updateCamera() {
   // Further back, the view also looks down, over the platforms, with me still in its middle; it stays inside the stands.
   // shortcut: the camera still goes through a platform or a cover right behind me; push it in front if it bothers players.
   const pitch = me.pitch - ZOOM_TILT * (zoom / MAX_ZOOM);
-  const back = (d) => new THREE.Vector3(Math.sin(me.yaw) * Math.cos(pitch) * d, EYE - Math.sin(pitch) * d, Math.cos(me.yaw) * Math.cos(pitch) * d)
+  const back = (d) => new THREE.Vector3(Math.sin(me.yaw) * Math.cos(pitch) * d, EYE - (me.legs ? 0 : STUMP * SCALE) - Math.sin(pitch) * d, Math.cos(me.yaw) * Math.cos(pitch) * d)
     .add(me.body.pos);
   let d = zoom;
   while (d > 0 && Math.hypot(back(d).x, back(d).z) > ARENA_RADIUS - 1) d -= 0.5;
@@ -1387,7 +1406,7 @@ function hostState() {
   return {
     ents: entities.map((e) => e.empty ? null : {
       name: e.name, alias: e.alias, bot: e.bot, x: e.body.pos.x, y: e.body.pos.y, z: e.body.pos.z, yaw: e.yaw,
-      alive: e.alive, life: e.life, discs: e.discs, score: e.score, boo: e.boo,
+      alive: e.alive, life: e.life, legs: e.legs, discs: e.discs, score: e.score, boo: e.boo,
       until: Object.fromEntries(Object.entries(e.until).filter(([, t]) => t > now).map(([p, t]) => [p, t - now])),
       knocks: e.knocks, kx: e.knockDir.x, kz: e.knockDir.z,
       how: e.how, shout: e.shout, killer: entities.indexOf(e.killer), dx: e.dir?.x ?? 0, dz: e.dir?.z ?? 0,
@@ -1454,7 +1473,7 @@ function guestHears(s) {
     Object.assign(e, { empty: false, name: n.name, alias: n.alias, bot: n.bot, score: n.score, discs: n.discs,
       until: Object.fromEntries(Object.entries(n.until).map(([p, t]) => [p, now + t])) });
     if (n.life !== e.life) {
-      Object.assign(e, { life: n.life, alive: true, body: newBody(n), yaw: n.yaw, pitch: 0, knocks: n.knocks });
+      Object.assign(e, { life: n.life, alive: true, body: newBody(n), yaw: n.yaw, pitch: 0, knocks: n.knocks, legs: n.legs });
       resetAvatar(e);
     }
     if (e !== me) {
@@ -1466,6 +1485,7 @@ function guestHears(s) {
       bleed(chest(e.body), 15, UP, 2, 4);
       if (e === me) knock(me.body, { x: n.kx, z: n.kz });
     }
+    if (n.legs < e.legs) loseLeg(e, n.legs);
     if (!n.alive && e.alive) {
       e.alive = false;
       showDeath(e, entities[n.killer] ?? null, n.how, { x: n.dx, z: n.dz }, n.shout, n.boo);
@@ -1532,10 +1552,7 @@ function hostFrame(dt) {
       updateCorpse(e, dt);
       if (now > e.respawnAt) spawn(e);
     }
-    e.group.position.set(e.body.pos.x, e.body.pos.y, e.body.pos.z);
-    e.group.rotation.y = e.yaw;
-    e.group.scale.setScalar(has(e, "fat") ? SCALE * FAT : SCALE);
-    e.body.slippery = has(e, "ice");
+    pose(e);
   }
   updateDiscs(dt);
   updateArena();
@@ -1545,6 +1562,16 @@ function hostFrame(dt) {
   sendIn = SEND_EVERY;
   const state = hostState();
   for (const e of entities) if (e.conn?.open) e.conn.send({ ...state, you: entities.indexOf(e) });
+}
+
+// The avatar where the body is, and the body told of its powers and its legs. Legless, it sits on its stumps.
+function pose(e) {
+  const scale = has(e, "fat") ? SCALE * FAT : SCALE;
+  e.group.position.set(e.body.pos.x, e.body.pos.y - (e.legs ? 0 : STUMP * scale), e.body.pos.z);
+  e.group.rotation.y = e.yaw;
+  e.group.scale.setScalar(scale);
+  e.body.slippery = has(e, "ice");
+  e.body.legs = e.legs;
 }
 
 function guestFrame(dt) {
@@ -1560,10 +1587,7 @@ function guestFrame(dt) {
       e.body.pos.z += (e.net.z - e.body.pos.z) * smooth;
     }
     if (!e.alive) updateCorpse(e, dt);
-    e.group.position.set(e.body.pos.x, e.body.pos.y, e.body.pos.z);
-    e.group.rotation.y = e.yaw;
-    e.group.scale.setScalar(has(e, "fat") ? SCALE * FAT : SCALE);
-    e.body.slippery = has(e, "ice");
+    pose(e);
   }
   netDiscs.forEach((mesh) => (mesh.rotation.y += 25 * dt));
   if (!host?.open || !me.body) return;
