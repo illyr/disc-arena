@@ -26,30 +26,32 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 
 Un arbitre très sérieux annonce à voix haute chaque mort, le début et la fin des parties (synthèse vocale du navigateur),
 et un annonceur à la Unreal Tournament, d'une autre voix, grave et traînante, crie les exploits :
-premier sang, doublé, triplé, massacre… (les points de bonus s'affichent mais ne sont pas dits). Chaque victime d'affilée sans mourir rapporte 1 point de plus
-(3 au plus), faire tomber le meneur, qui porte une couronne, 2 points de plus, chaque rebond du disque avant la touche 1 point de plus
-(3 au plus, « Trickshot ! »). Un disque qui traverse deux joueurs ou plus fait un « Strike ! ». Le public est partisan : il hue le meneur quand il marque
-et acclame le dernier qui en élimine un (« Outsider ! »). À 18 points, « Balle de match ! » : la foule gronde et le joueur est cerclé de rouge sur le radar.
+« Premier sang ! », « En pleine tête ! » (« Chasseur de têtes ! » à la 3e décapitation), puis « Doublé ! », « Triplé ! », « Série meurtrière ! »…
+jusqu'à « Appelez une ambulance ! » (les frags de bonus s'affichent mais ne sont pas dits). Chaque victime d'affilée sans mourir rapporte 1 frag de plus
+(3 au plus), faire tomber le premier, qui porte une couronne, 2 frags de plus (« Détrôné ! »), chaque rebond du disque avant la touche 1 frag de plus
+(3 au plus, « Par la bande ! »). Un disque qui traverse deux joueurs ou plus fait une « Brochette ! ». Le public est partisan : il hue le premier quand il marque
+et acclame le dernier qui en élimine un (« Remontada ! »). À 18 frags, « Un frag pour la gloire ! » : la foule gronde et le joueur est cerclé de rouge sur le radar.
+Chacun entend « Tu as pris la tête ! » ou « Tu as perdu la tête ! » quand il passe premier ou ne l'est plus.
 Chaque exploit s'affiche 2 s au milieu de l'écran, avec la carte du joueur.
 
 Le disque part où l'on vise, vers le haut comme vers le bas, et rebondit sur le dessus et le dessous des plateformes.
 Le radar, en bas à droite, tourne avec le joueur
 (devant = en haut) : les plateformes au liseré de leur étage, les autres joueurs à leur couleur avec leur alias, plus petits à l'étage du dessous,
-cerclés de blanc à celui du dessus, d'or pour le meneur.
+cerclés de blanc à celui du dessus, d'or pour le premier.
 Sur une des tours du dernier étage, un booster doré, signalé par une colonne de lumière et une ★ sur le radar :
-qui le prend lance des disques 10 fois plus larges pendant 60 s (perdu à la mort) ; il revient 30 s plus tard sur une tour au hasard. On ne réapparaît jamais sur une tour.
+qui le prend lance des disques XXL, 10 fois plus larges, pendant 60 s (perdu à la mort) ; il revient 30 s plus tard sur une tour au hasard. On ne réapparaît jamais sur une tour.
 Au pied de chaque tremplin qui monte du sol, à côté de l'abri, un malus violet (✖ sur le radar) : qui passe dessus devient
 4 fois plus grand pendant 10 s, donc facile à toucher, même depuis l'étage du dessus ; il revient 20 s plus tard.
-Toutes les 10 s, un objet apparaît sur une plateforme (2 au plus) : 🎯 disques à tête chercheuse (15 s), ⚡ rafale (10 s, jusqu'à 8 disques en vol),
-🛡️ bouclier (30 s, arrête un disque) ou 🧊 pieds glissants (malus, 10 s).
+Toutes les 10 s, un objet apparaît sur une plateforme (2 au plus) : 🎯 disques têtus, à tête chercheuse (15 s), ⚡ mode berserk (10 s, jusqu'à 8 disques en vol),
+🛡️ ceinture-bouclier (30 s, arrête un disque) ou 🧊 mutateur Patinoire (malus, 10 s).
 Toutes les 15 s, une plateforme clignote en rouge 3 s puis disparaît 6 s : ceux qui sont dessus tombent.
-La tête d'un décapité se shoote en marchant dessus ; dans le vide, c'est « Pénalty ! ».
-Tué par un autre joueur, on revoit sa mort par ses yeux (« Replay »).
+La tête d'un décapité se shoote en marchant dessus ; dans le vide : « Et c'est le buuut ! ».
+Tué par un autre joueur, on revoit sa mort par ses yeux (« Killcam »).
 
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : saute et lance aussitôt pour viser les cous.
-Une partie se joue en chacun pour soi : une décapitation vaut 5 points, éjecter quelqu'un dans le vide 1 point
-(tomber tout seul en partie coûte 1 point). Le premier à 20 points gagne.
-Avant chaque partie, une salle d'attente : on s'échauffe sans marquer, puis l'hôte clique « Lancer la partie »
+Une partie se joue en chacun pour soi : une décapitation vaut 5 frags, éjecter quelqu'un dans le vide 1 frag
+(tomber tout seul en partie coûte 1 frag). Le premier à 20 frags gagne.
+Avant chaque partie, l'échauffement : on joue sans marquer, puis l'hôte clique « Au combat ! », et après « 3, 2, 1, Fraggez ! » les frags comptent
 (Échap pour l'afficher) ; on y revient 6 s après chaque victoire.
 Autour de l'arène, des gradins pleins de spectateurs, qui sautent à chaque mort, et applaudissent et crient à chaque décapitation
 (son synthétisé dans le navigateur, coupé avec le reste par M).

@@ -26,6 +26,7 @@ const MAX_STREAK_BONUS = 3; // the n-th kill in a row without dying scores n - 1
 const REGICIDE_BONUS = 2; // for bringing down the crowned leader
 const MAX_TRICK_BONUS = 3; // a kill after n rebounds scores n more, up to this
 const WIN_SCORE = 20;
+const COUNTDOWN = 4; // s from « Au combat ! » to the first frag that counts
 const MATCH_POINT = WIN_SCORE - 2; // from it, the announcer, the crowd and the radar make much of the player
 const RAPID_MAX = 8; // discs in the air at once, in a burst
 const MATCH_PAUSE = 6; // seconds the winner stays on screen before the lobby
@@ -292,7 +293,7 @@ const joining = params.get("room"); // a code: join that room; none: host one
 const BOTS = joining ? 0 : Math.min(Number(params.get("bots")) || 0, NAMES.length - 1);
 const entities = NAMES.map((name, i) => ({
   name, alias: name, color: COLORS[i], bot: i > 0 && i <= BOTS, empty: !!joining || i > BOTS,
-  score: 0, streak: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, until: {}, ...makeAvatar(LOOKS[i]),
+  score: 0, streak: 0, heads: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, until: {}, ...makeAvatar(LOOKS[i]),
 }));
 entities.forEach((e) => (e.group.visible = !e.empty));
 
@@ -332,7 +333,9 @@ let inMatch = false; // false: the lobby, where the players warm up and score no
 let winner = null; // the host's winner of the match, until the lobby
 let firstBlood = false; // spilled in this match
 let nextMatchAt = 0;
-let winnerText = "";
+let champion = null; // the winner shown, until the lobby
+let fightAt = 0; // the host's end of the countdown: no kill counts before
+let lastTop = null; // the leader last shown, to tell me when I take the lead or lose it
 const discs = [];
 const drops = [];
 const flyingHeads = [];
@@ -366,7 +369,7 @@ function resetAvatar(e) {
   if (e === me) replay = null;
   const i = flyingHeads.findIndex((h) => h.owner === e);
   if (i >= 0) flyingHeads.splice(i, 1);
-  if (e === me) banner(winnerText);
+  if (e === me) banner(winBanner());
   renderScores();
 }
 if (!joining) entities.filter((e) => !e.empty).forEach(spawn);
@@ -444,7 +447,7 @@ function updateDiscs(dt) {
           victim.lastHitAt = now;
           victim.lastTricks = d.rebounds;
           bleed(chest(victim.body), 15, UP, 2, 4);
-          if (strike) tell("{K} fait un strike", { "{K}": d.owner }, "Strike !", true);
+          if (strike) tell("{K} a fait une brochette", { "{K}": d.owner }, "Brochette !", true);
         }
       }
     }
@@ -455,12 +458,12 @@ function updateDiscs(dt) {
 
 // What a player can catch: how long it lasts, how it shows, the line that tells it.
 const POWERS = {
-  giant: { time: BOOST_TIME, icon: "★", label: "Disques géants", took: "{K} a pris les disques géants" },
-  fat: { time: FAT_TIME, icon: "✖", label: "Énorme : cible facile", took: "{K} est devenu énorme" },
-  homing: { time: 15, icon: "🎯", color: 0x18ffff, label: "Tête chercheuse", took: "{K} a des disques à tête chercheuse" },
-  rapid: { time: 10, icon: "⚡", color: 0xff9100, label: "Rafale", took: "{K} lance en rafale" },
-  shield: { time: 30, icon: "🛡️", color: 0x82b1ff, label: "Bouclier", took: "{K} a un bouclier" },
-  ice: { time: 10, icon: "🧊", color: 0xe0f7fa, label: "Pieds glissants", took: "{K} a les pieds glissants" },
+  giant: { time: BOOST_TIME, icon: "★", label: "Disques XXL", took: "{K} a des disques XXL" },
+  fat: { time: FAT_TIME, icon: "✖", label: "Mutateur : Gros Bide", took: "{K} a pris du bide" },
+  homing: { time: 15, icon: "🎯", color: 0x18ffff, label: "Disques têtus", took: "{K} a des disques têtus" },
+  rapid: { time: 10, icon: "⚡", color: 0xff9100, label: "Mode berserk", took: "{K} passe en mode berserk" },
+  shield: { time: 30, icon: "🛡️", color: 0x82b1ff, label: "Ceinture-bouclier", took: "{K} a bouclé sa ceinture" },
+  ice: { time: 10, icon: "🧊", color: 0xe0f7fa, label: "Mutateur : Patinoire", took: "{K} fait du patin" },
 };
 const ITEM_KINDS = ["homing", "rapid", "shield", "ice"]; // dropped here and there; the booster and the maluses have their places
 const has = (e, power) => now < (e.until[power] ?? 0);
@@ -613,7 +616,7 @@ function kill(e, killer, how, dir, { rebounds = 0, strike = false } = {}) {
   e.alive = false;
   e.respawnAt = now + (how === "decap" ? DECAP_RESPAWN_DELAY : RESPAWN_DELAY);
   discs.filter((d) => d.owner === e).forEach(removeDisc);
-  const counts = inMatch && !winner;
+  const counts = inMatch && !winner && now >= fightAt;
   const scores = killer && counts;
   const regicide = e === leader();
   const others = entities.filter((o) => !o.empty && o !== killer);
@@ -627,11 +630,12 @@ function kill(e, killer, how, dir, { rebounds = 0, strike = false } = {}) {
     if (scores) killer.score += POINTS[how] + bonus + trick + (regicide ? REGICIDE_BONUS : 0);
     if (scores && !firstBlood) shouts.push("Premier sang !");
     firstBlood ||= scores;
-    if (strike) shouts.push("Strike !");
-    if (trick) shouts.push(`Trickshot !${scores ? ` +${trick}` : ""}`);
+    if (how === "decap") shouts.push(scores && ++killer.heads === 3 ? "Chasseur de têtes !" : "En pleine tête !");
+    if (strike) shouts.push("Brochette !");
+    if (trick) shouts.push(`Par la bande !${scores ? ` +${trick}` : ""}`);
     if (bonus) shouts.push(STREAK_SHOUTS[Math.min(killer.streak, STREAK_SHOUTS.length - 1)] + (scores ? ` +${bonus}` : ""));
-    if (regicide) shouts.push(`Régicide !${scores ? ` +${REGICIDE_BONUS}` : ""}`);
-    if (outsider) shouts.push("Outsider !");
+    if (regicide) shouts.push(`Détrôné !${scores ? ` +${REGICIDE_BONUS}` : ""}`);
+    if (outsider) shouts.push("Remontada !");
   } else {
     if (counts) e.score -= 1; // a fall nobody caused: a suicide
     shouts.push(`Humiliation !${counts ? " -1" : ""}`);
@@ -645,14 +649,15 @@ function kill(e, killer, how, dir, { rebounds = 0, strike = false } = {}) {
     showWinner(winner);
   } else if (scores && killer.score >= MATCH_POINT && !killer.matchPoint) {
     killer.matchPoint = true;
-    setTimeout(() => tell("{K} a balle de match", { "{K}": killer }, "Balle de match !", true), 2000); // after the card of the kill
+    setTimeout(() => tell("{K} sent la victoire", { "{K}": killer }, "Un frag pour la gloire !", true), 2000); // after the card of the kill
   }
 }
 
 function launchMatch() {
   [...discs].forEach(removeDisc);
-  for (const e of entities) if (!e.empty) spawn(Object.assign(e, { score: 0, streak: 0, matchPoint: false }));
+  for (const e of entities) if (!e.empty) spawn(Object.assign(e, { score: 0, streak: 0, heads: 0, matchPoint: false }));
   firstBlood = false;
+  fightAt = now + COUNTDOWN;
   setMatch(true);
 }
 
@@ -664,20 +669,33 @@ function toLobby() {
 
 function setMatch(on) {
   inMatch = on;
+  lastTop = null;
   if (on) {
+    for (const e of entities) e.matchLife = e.life; // a winner still on this life never died: flawless
     feed("La partie commence !");
-    announce("Mesdames et messieurs, la partie commence.");
+    announce("Mesdames et messieurs, veuillez garder la tête sur les épaules. La partie commence.");
+    // shortcut: a guest joining in the first seconds of a match also sees the count, harmless
+    if (entities.every((e) => !e.score)) {
+      ["3", "2", "1", "Fraggez !"].forEach((n, i) => setTimeout(() => {
+        banner(n);
+        if (i === 3) announce("", n);
+      }, (i + 1) * 1000 * COUNTDOWN / 4));
+      setTimeout(() => $("banner").textContent === "Fraggez !" && banner(""), (COUNTDOWN + 1) * 1000);
+    }
   }
   renderScores();
 }
 
-const winText = (e) => e ? `${e.alias} a gagné la partie !` : "";
+const flawless = (e) => e === me && e.life === e.matchLife;
+function winBanner() { // hoisted: the first spawns call it
+  return !champion ? "" : champion !== me ? "Défaite… ça arrive." : flawless(me) ? "Victoire sans une égratignure !" : "Victoire !";
+}
 function showWinner(e) {
-  winnerText = winText(e);
-  banner(winnerText);
+  champion = e;
+  banner(winBanner());
   if (e) {
-    feed(winnerText);
-    announce(`Fin de la partie. Victoire de ${e.alias}.`);
+    feed(`${e.alias} remporte le match !`);
+    announce(`Fin de la partie. Victoire de ${e.alias}.`, flawless(e) ? "Sans une égratignure !" : "");
   }
 }
 
@@ -688,10 +706,10 @@ function showDeath(e, killer, how, dir, shout, boo) {
   if (shout) splash(killer ?? e, shout); // the exploit's author, or the one humiliated
   if (e === me) {
     me.group.visible = true;
-    banner(how === "decap" ? `Décapité par ${killer.alias}` : killer ? `Éjecté par ${killer.alias}` : "Tu es tombé");
+    banner(how === "decap" ? `Raccourci par ${killer.alias}` : killer ? `Sorti par ${killer.alias}` : "Suicide. Bien joué.");
     if (killer && killer !== me) {
       replay = { killer, from: now, lead: how === "fall" ? 3 : 1.5 }; // a fall comes long after the push
-      $("replay").textContent = `Replay — vu par ${killer.alias}`;
+      $("replay").textContent = `Killcam — avec les compliments de ${killer.alias}`;
     }
   }
   if (how === "decap") {
@@ -699,7 +717,7 @@ function showDeath(e, killer, how, dir, shout, boo) {
     cheerUntil = now + 4;
   }
   if (boo) roar(true);
-  else if (how === "decap" || shout.includes("Outsider")) roar();
+  else if (how === "decap" || shout.includes("Remontada")) roar();
   // Solo only: the host's slow motion would slow the world under the guests' feet.
   const solo = !joining && !entities.some((o) => o.conn);
   if (how === "decap" && solo && (e === me || killer === me)) slowUntil = performance.now() + 1500;
@@ -768,7 +786,7 @@ function updateHeads(dt) {
     }
     if (!joining && h.kicker && !h.scored && m.position.y < FALL_DEATH_Y) {
       h.scored = true;
-      tell("{K} a shooté la tête de {V} dans le vide", { "{K}": h.kicker, "{V}": h.owner }, "Pénalty !", true);
+      tell("{K} a marqué avec la tête de {V}", { "{K}": h.kicker, "{V}": h.owner }, "Et c'est le buuut !", true);
     }
   }
 }
@@ -1015,10 +1033,10 @@ function say(text, voice, pitch, rate) {
   Object.assign(words, { lang: "fr-FR", voice, pitch, rate });
   speechSynthesis.speak(words);
 }
-// shout: the exploits as shown ("Doublé ! +1 Régicide ! +2"); their points are not said.
+// shout: the exploits as shown ("Doublé ! +1 Détrôné ! +2"); their points are not said.
 function announce(text, shout = "") {
   if (muted || !window.speechSynthesis || speechSynthesis.pending) return; // one event waiting at most: the match goes on
-  say(text, refereeVoice, 0.5, 1.15);
+  if (text) say(text, refereeVoice, 0.5, 1.15);
   for (const cry of shout.match(/[^!+\d ][^!]*!/g) ?? []) say(DRAWN_SHOUTS[cry] ?? cry, announcerVoice, 0.1, 0.6);
 }
 
@@ -1221,10 +1239,18 @@ function leader() {
 function renderScores() {
   const top = leader();
   for (const e of entities) e.crown.visible = e === top;
+  if (inMatch && top && top !== lastTop && (top === me || lastTop === me)) {
+    const cry = top === me ? "Tu as pris la tête !" : "Tu as perdu la tête !";
+    setTimeout(() => { // after the card of the kill
+      splash(me, cry);
+      announce("", cry);
+    }, 2000);
+  }
+  if (top) lastTop = top;
   $("scores").innerHTML = "";
   const title = document.createElement("div");
-  title.textContent = inMatch ? `Premier à ${WIN_SCORE} points`
-    : joining ? "Salle d'attente : l'hôte va lancer la partie" : "Salle d'attente : Échap, puis « Lancer la partie »";
+  title.textContent = inMatch ? `Limite de frags : ${WIN_SCORE}`
+    : joining ? "Échauffement : l'hôte va lancer le match" : "Échauffement : Échap, puis « Au combat ! »";
   $("scores").append(title);
   for (const e of entities.filter((o) => !o.empty).sort((a, b) => b.score - a.score)) {
     const line = document.createElement("div");
@@ -1237,7 +1263,7 @@ function renderScores() {
 
 // The table of the players on the start screen, and the field to rename oneself.
 function renderLobby(top) {
-  $("lobby-title").textContent = inMatch ? "Partie en cours" : "Salle d'attente";
+  $("lobby-title").textContent = inMatch ? "Match à mort" : "Échauffement";
   $("players").replaceChildren(...entities.filter((o) => !o.empty).map((o) => {
     const card = document.createElement("div");
     card.className = o === me ? "card me" : "card";
@@ -1251,7 +1277,7 @@ function renderLobby(top) {
     name.className = "pseudo";
     name.textContent = o.name;
     const info = document.createElement("div");
-    info.textContent = [o === entities[0] ? "hôte" : o.bot ? "bot" : "", `${o.score} pts`].filter(Boolean).join(" · ");
+    info.textContent = [o === entities[0] ? "hôte" : o.bot ? "bot" : "", `${o.score} frags`].filter(Boolean).join(" · ");
     card.append(portrait, alias, name, info);
     return card;
   }));
@@ -1356,7 +1382,7 @@ function guestHears(s) {
   });
   if (s.match !== inMatch) setMatch(s.match);
   const won = entities[s.winner];
-  if (winText(won) !== winnerText) showWinner(won);
+  if ((won ?? null) !== champion) showWinner(won ?? null);
   const key = s.ents.map((n) => n && n.name + n.alias + n.score).join();
   if (key !== scoresKey) {
     scoresKey = key;

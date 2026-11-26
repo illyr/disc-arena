@@ -101,6 +101,7 @@ export const PUSH_LINES = [
   "{K} a mis {V} en apesanteur, sans le retour",
   "{K} a fait goûter le vide à {V}",
   "{V} visite les profondeurs, invité par {K}",
+  "{K} a montré la sortie à {V}",
 ];
 export const FALL_LINES = [
   "{V} est tombé tout seul",
@@ -119,23 +120,34 @@ export const FALL_LINES = [
   "{V} a fait une sortie remarquée",
   "{V} a perdu pied, puis tout le reste",
   "{V} est allé chercher un disque tout en bas",
+  "{V} a tenté le saut de l'ange. Raté.",
 ];
 
 // What the referee shouts for kills in a row without dying, by their count.
-export const STREAK_SHOUTS = ["", "", "Doublé !", "Triplé !", "Massacre !", "Carnage !", "Monstrueux !"];
+export const STREAK_SHOUTS = ["", "", "Doublé !", "Triplé !", "Série meurtrière !", "Déchaîné !", "Inarrêtable !", "Monstrueux !", "Divin !",
+  "Appelez une ambulance !"];
 // How the announcer says them: syllables hammered and drawn out, « MOOONSTER KILL ».
 export const DRAWN_SHOUTS = {
   "Premier sang !": "Premier... sang !",
   "Doublé !": "Dou... blé !",
   "Triplé !": "Tri... plé !",
-  "Massacre !": "Ma... ssa... cre !",
-  "Carnage !": "Car... nage !",
+  "Série meurtrière !": "Série... meur... trière !",
+  "Déchaîné !": "Dé... chaî... né !",
+  "Inarrêtable !": "In... arrê... table !",
   "Monstrueux !": "Mon... mon... mons... trueux !",
-  "Régicide !": "Ré... gi... cide !",
+  "Divin !": "Di... vin !",
+  "Appelez une ambulance !": "Appelez... une... am... bu... lance !",
+  "En pleine tête !": "En pleine... tête !",
+  "Chasseur de têtes !": "Chasseur... de... têtes !",
+  "Brochette !": "Bro... chette !",
+  "Par la bande !": "Par... la... bande !",
+  "Détrôné !": "Dé... trô... né !",
+  "Remontada !": "Re... mon... tada !",
+  "Un frag pour la gloire !": "Un frag... pour la... gloire !",
+  "Et c'est le buuut !": "Et c'est le... buuuuut !",
   "Humiliation !": "Hu... mi... li... ation !",
-  "Trickshot !": "Trick... shot !",
-  "Strike !": "Strai... ke !",
-  "Pénalty !": "Pé... nal... ty !",
-  "Outsider !": "Out... sai... deur !",
-  "Balle de match !": "Balle... de... match !",
+  "Tu as pris la tête !": "Tu as pris... la... tête !",
+  "Tu as perdu la tête !": "Tu as perdu... la... tête !",
+  "Fraggez !": "Fra... ggez !",
+  "Sans une égratignure !": "Sans une... é... gra... ti... gnure !",
 };
