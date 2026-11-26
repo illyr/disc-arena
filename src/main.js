@@ -4,7 +4,7 @@ import {
   chest, hitZone, knock, newBody, newDisc, platformUnder, stepBody, stepDisc,
 } from "./rules.js";
 import { hostRoom, joinRoom, newRoomCode } from "./net.js";
-import { PSEUDOS } from "./pseudos.js";
+import { DECAP_LINES, FALL_LINES, PSEUDOS, PUSH_LINES } from "./pseudos.js";
 
 const NAMES = ["Joueur 1", "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"];
 // Every slot looks like no other: its colour, the pattern on its body, and its oddities
@@ -40,6 +40,7 @@ const BOT_DECAPS = 0.12;
 const NAME_MAX = 60;
 const STILL = { x: 0, z: 0 };
 const $ = (id) => document.getElementById(id);
+const css = (color) => `#${color.toString(16).padStart(6, "0")}`;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(devicePixelRatio);
@@ -105,7 +106,7 @@ function patternTexture({ color, ink, pattern }) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 256;
   const g = canvas.getContext("2d");
-  g.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+  g.fillStyle = css(color);
   g.fillRect(0, 0, 256, 256);
   g.fillStyle = g.strokeStyle = ink;
   g.lineWidth = 12;
@@ -206,7 +207,7 @@ const joining = params.get("room"); // a code: join that room; none: host one
 // No bots unless asked (?bots=3): the free slots wait for players. A guest knows the slots from the host.
 const BOTS = joining ? 0 : Math.min(Number(params.get("bots")) || 0, NAMES.length - 1);
 const entities = NAMES.map((name, i) => ({
-  name, color: COLORS[i], bot: i > 0 && i <= BOTS, empty: !!joining || i > BOTS,
+  name, alias: name, color: COLORS[i], bot: i > 0 && i <= BOTS, empty: !!joining || i > BOTS,
   score: 0, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, ...makeAvatar(LOOKS[i]),
 }));
 entities.forEach((e) => (e.group.visible = !e.empty));
@@ -238,11 +239,11 @@ function takePortraits() {
 takePortraits();
 let me = entities[0]; // a guest learns its slot from the host's first state
 const pickPseudo = () => {
-  const free = PSEUDOS.filter((p) => !entities.some((o) => !o.empty && o.name === p));
+  const free = PSEUDOS.filter((p) => !entities.some((o) => !o.empty && o.name === p.name));
   return free[Math.floor(Math.random() * free.length)];
 };
 const cleanName = (name) => (typeof name === "string" ? name.trim().slice(0, NAME_MAX) : "");
-if (!joining) me.name = pickPseudo();
+if (!joining) Object.assign(me, pickPseudo());
 let inMatch = false; // false: the lobby, where the players warm up and score nothing until the host launches
 let winner = null; // the host's winner of the match, until the lobby
 let nextMatchAt = 0;
@@ -375,7 +376,7 @@ function setMatch(on) {
   renderScores();
 }
 
-const winText = (e) => e ? `${e.name} a gagné la partie !` : "";
+const winText = (e) => e ? `${e.alias} a gagné la partie !` : "";
 function showWinner(e) {
   winnerText = winText(e);
   banner(winnerText);
@@ -383,13 +384,12 @@ function showWinner(e) {
 }
 
 function showDeath(e, killer, how, dir) {
-  const text = how === "decap"
-    ? `${killer.name} a décapité ${e.name}`
-    : killer ? `${killer.name} a éjecté ${e.name}` : `${e.name} est tombé`;
-  feed(text);
+  const lines = how === "decap" ? DECAP_LINES : killer ? PUSH_LINES : FALL_LINES;
+  // Picked from the death count, so that every player reads the same line.
+  feed(lines[(e.life + entities.indexOf(e)) % lines.length], { "{K}": killer, "{V}": e });
   if (e === me) {
     me.group.visible = true;
-    banner(how === "decap" ? `Décapité par ${killer.name}` : killer ? `Éjecté par ${killer.name}` : "Tu es tombé");
+    banner(how === "decap" ? `Décapité par ${killer.alias}` : killer ? `Éjecté par ${killer.alias}` : "Tu es tombé");
   }
   if (how === "decap") decapitate(e, dir);
   // Solo only: the host's slow motion would slow the world under the guests' feet.
@@ -615,7 +615,7 @@ let myName = null;
 $("pseudo").addEventListener("input", (ev) => {
   const name = cleanName(ev.target.value);
   if (!name) return;
-  me.name = name;
+  me.name = me.alias = name;
   if (joining) myName = name;
   renderScores();
 });
@@ -648,11 +648,24 @@ function updateCamera() {
 function banner(text) {
   $("banner").textContent = text;
 }
-function feed(text) {
+// A line in the top-left corner; an event names its players, {K} and {V}, in their colours.
+function feed(text, players = {}) {
   const line = document.createElement("div");
-  line.textContent = text;
+  for (const bit of text.split(/(\{[KV]\})/)) {
+    const who = players[bit];
+    if (!who) {
+      line.append(bit);
+      continue;
+    }
+    const name = document.createElement("b");
+    name.textContent = who.alias;
+    name.style.color = css(who.color);
+    line.append(name);
+  }
+  if (Object.keys(players).length) line.className = "event";
   $("feed").append(line);
-  setTimeout(() => line.remove(), 5000);
+  while ($("feed").children.length > 4) $("feed").firstChild.remove();
+  setTimeout(() => line.remove(), 6000);
 }
 function renderScores() {
   $("scores").innerHTML = "";
@@ -672,20 +685,23 @@ function renderLobby() {
     const portrait = new Image();
     portrait.src = o.portrait;
     portrait.alt = "";
+    const alias = document.createElement("b");
+    alias.textContent = o === me ? `${o.alias} (toi)` : o.alias;
+    alias.style.color = css(o.color);
     const name = document.createElement("div");
-    name.textContent = o === me ? `${o.name} (toi)` : o.name;
-    name.style.color = `#${o.color.toString(16).padStart(6, "0")}`;
+    name.className = "pseudo";
+    name.textContent = o.name;
     const info = document.createElement("div");
     info.textContent = [o === entities[0] ? "hôte" : o.bot ? "bot" : "", `${o.score} pts`].filter(Boolean).join(" · ");
-    card.append(portrait, name, info);
+    card.append(portrait, alias, name, info);
     return card;
   }));
   if (document.activeElement !== $("pseudo")) $("pseudo").value = me.name;
   $("launch").hidden = !!joining || inMatch;
   for (const e of entities.filter((o) => !o.empty).sort((a, b) => b.score - a.score)) {
     const line = document.createElement("div");
-    line.textContent = `${e === me ? "▶ " : ""}${e.name}  ${e.score}`;
-    line.style.color = `#${e.color.toString(16).padStart(6, "0")}`;
+    line.textContent = `${e === me ? "▶ " : ""}${e.alias}  ${e.score}`;
+    line.style.color = css(e.color);
     $("scores").append(line);
   }
 }
@@ -700,7 +716,7 @@ let host = null; // a guest's connection to the host
 function hostState() {
   return {
     ents: entities.map((e) => e.empty ? null : {
-      name: e.name, bot: e.bot, x: e.body.pos.x, y: e.body.pos.y, z: e.body.pos.z, yaw: e.yaw,
+      name: e.name, alias: e.alias, bot: e.bot, x: e.body.pos.x, y: e.body.pos.y, z: e.body.pos.z, yaw: e.yaw,
       alive: e.alive, life: e.life, discs: e.discs, score: e.score,
       knocks: e.knocks, kx: e.knockDir.x, kz: e.knockDir.z,
       how: e.how, killer: entities.indexOf(e.killer), dx: e.dir?.x ?? 0, dz: e.dir?.z ?? 0,
@@ -714,7 +730,7 @@ function hostState() {
 function guestJoins(conn) {
   const e = entities.find((o) => o.empty);
   if (!e) return conn.close(); // full
-  Object.assign(e, { empty: false, conn, name: pickPseudo(), score: 0, throws: 0, decaps: 0 });
+  Object.assign(e, { empty: false, conn, ...pickPseudo(), score: 0, throws: 0, decaps: 0 });
   e.seenAt = performance.now();
   spawn(e);
   feed(`${e.name} a rejoint la partie`);
@@ -735,7 +751,7 @@ function guestSays(conn, msg) {
   e.yaw = msg.yaw;
   const name = cleanName(msg.name);
   if (name && name !== e.name) {
-    e.name = name;
+    e.name = e.alias = name;
     renderScores();
   }
   // A guest still on its last life has not seen the respawn yet: where it says it is no longer holds.
@@ -757,7 +773,7 @@ function guestHears(s) {
       if (!e.empty) vacate(e);
       return;
     }
-    Object.assign(e, { empty: false, name: n.name, bot: n.bot, score: n.score, discs: n.discs });
+    Object.assign(e, { empty: false, name: n.name, alias: n.alias, bot: n.bot, score: n.score, discs: n.discs });
     if (n.life !== e.life) {
       Object.assign(e, { life: n.life, alive: true, body: newBody(n), yaw: n.yaw, knocks: n.knocks });
       resetAvatar(e);
@@ -779,7 +795,7 @@ function guestHears(s) {
   if (s.match !== inMatch) setMatch(s.match);
   const won = entities[s.winner];
   if (winText(won) !== winnerText) showWinner(won);
-  const key = s.ents.map((n) => n && n.name + n.score).join();
+  const key = s.ents.map((n) => n && n.name + n.alias + n.score).join();
   if (key !== scoresKey) {
     scoresKey = key;
     renderScores();
