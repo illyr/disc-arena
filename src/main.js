@@ -1074,7 +1074,7 @@ function guestHears(s) {
     }
     Object.assign(e, { empty: false, name: n.name, alias: n.alias, bot: n.bot, score: n.score, discs: n.discs });
     if (n.life !== e.life) {
-      Object.assign(e, { life: n.life, alive: true, body: newBody(n), yaw: n.yaw, knocks: n.knocks });
+      Object.assign(e, { life: n.life, alive: true, body: newBody(n), yaw: n.yaw, pitch: 0, knocks: n.knocks });
       resetAvatar(e);
     }
     if (e !== me) {
