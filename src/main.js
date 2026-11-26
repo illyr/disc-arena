@@ -480,7 +480,11 @@ function showDeath(e, killer, how, dir, shout) {
     me.group.visible = true;
     banner(how === "decap" ? `Décapité par ${killer.alias}` : killer ? `Éjecté par ${killer.alias}` : "Tu es tombé");
   }
-  if (how === "decap") decapitate(e, dir);
+  if (how === "decap") {
+    decapitate(e, dir);
+    roar();
+    cheerUntil = now + 4;
+  }
   // Solo only: the host's slow motion would slow the world under the guests' feet.
   const solo = !joining && !entities.some((o) => o.conn);
   if (how === "decap" && solo && (e === me || killer === me)) slowUntil = performance.now() + 1500;
@@ -752,6 +756,7 @@ function setMuted(on) {
   } catch {}
   $("mute").textContent = on ? "🔇" : "🔊";
   if (on) window.speechSynthesis?.cancel();
+  if (on) crowd?.suspend();
 }
 setMuted(muted);
 $("mute").addEventListener("click", () => setMuted(!muted));
@@ -779,6 +784,71 @@ function announce(text, shout = "") {
   if (muted || !window.speechSynthesis || speechSynthesis.pending) return; // one event waiting at most: the match goes on
   say(text, refereeVoice, 0.5, 1.15);
   for (const cry of shout.match(/[^!+\d ][^!]*!/g) ?? []) say(DRAWN_SHOUTS[cry] ?? cry, announcerVoice, 0.1, 0.6);
+}
+
+// The crowd at a decapitation, made up on the spot: hundreds of claps, and a chorus of voices
+// yelling « ouais » that rises then dies down, over the rumble of the stands.
+let crowd = null;
+const ROAR_TIME = 3.5;
+function roar() {
+  if (muted || !window.AudioContext) return;
+  crowd ??= new AudioContext();
+  crowd.resume();
+  const t = crowd.currentTime, rate = crowd.sampleRate;
+  const out = crowd.createGain();
+  out.gain.value = 0.3;
+  out.connect(crowd.destination);
+  // The claps: short bursts of noise, thick at first, then fewer and fewer.
+  const claps = crowd.createBuffer(1, rate * ROAR_TIME, rate);
+  const data = claps.getChannelData(0);
+  for (let c = 0; c < 500; c++) {
+    const at = Math.floor(Math.random() ** 2 * (ROAR_TIME - 0.1) * rate), loud = 0.2 + Math.random() * 0.5;
+    for (let i = 0; i < 0.02 * rate; i++) data[at + i] += (Math.random() * 2 - 1) * loud * Math.exp(-i / (0.003 * rate));
+  }
+  const clapping = crowd.createBufferSource();
+  clapping.buffer = claps;
+  const bright = crowd.createBiquadFilter();
+  bright.type = "highpass";
+  bright.frequency.value = 900;
+  clapping.connect(bright).connect(out);
+  clapping.start(t);
+  // The rumble: noise through the band of voices, swelling then fading.
+  const hiss = crowd.createBuffer(1, rate * ROAR_TIME, rate);
+  hiss.getChannelData(0).forEach((_, i, d) => (d[i] = Math.random() * 2 - 1));
+  const rumble = crowd.createBufferSource();
+  rumble.buffer = hiss;
+  const band = crowd.createBiquadFilter();
+  band.type = "bandpass";
+  band.Q.value = 0.7;
+  band.frequency.setValueAtTime(400, t);
+  band.frequency.linearRampToValueAtTime(1100, t + 0.4);
+  band.frequency.linearRampToValueAtTime(600, t + ROAR_TIME);
+  const swell = crowd.createGain();
+  swell.gain.setValueAtTime(0.001, t);
+  swell.gain.exponentialRampToValueAtTime(0.8, t + 0.3);
+  swell.gain.exponentialRampToValueAtTime(0.001, t + ROAR_TIME);
+  rumble.connect(band).connect(swell).connect(out);
+  rumble.start(t);
+  // The yells: voices at random pitches, each going up into its « ouais » and down again.
+  const vowel = crowd.createBiquadFilter();
+  vowel.type = "bandpass";
+  vowel.frequency.value = 800;
+  vowel.Q.value = 1.2;
+  vowel.connect(out);
+  for (let v = 0; v < 24; v++) {
+    const voice = crowd.createOscillator(), loud = crowd.createGain();
+    const start = t + Math.random() * 0.4, end = start + 1 + Math.random() * 1.5, pitch = 180 + Math.random() * 320;
+    voice.type = "sawtooth";
+    voice.frequency.setValueAtTime(pitch, start);
+    voice.frequency.linearRampToValueAtTime(pitch * 1.5, start + 0.25);
+    voice.frequency.linearRampToValueAtTime(pitch * 0.9, end);
+    loud.gain.setValueAtTime(0.001, start);
+    loud.gain.exponentialRampToValueAtTime(0.03, start + 0.1);
+    loud.gain.exponentialRampToValueAtTime(0.001, end);
+    voice.connect(loud).connect(vowel);
+    voice.start(start);
+    voice.stop(end);
+  }
 }
 
 // A line in the top-left corner; an event names its players, {K} and {V}, in their colours.
