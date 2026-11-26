@@ -21,7 +21,7 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | Espace | sauter : par-dessus un disque |
 | Clic gauche | disque : pousse la cible, rebondit 3 fois puis revient ; il vole vers ce qui est sous la croix du viseur ; à côté des disques, en bas à gauche, le temps avant le retour du prochain |
 | Clic droit | décapiteur : prend les 3 disques, tue d'un coup, sauf dans les jambes, où il en coupe une |
-| Tremplin vert | propulse vers une plateforme voisine, vers le haut comme vers le bas : chaque plateforme en a un vers chacune de ses voisines, et la place centrale un de plus vers chaque plateforme de l'étage |
+| Tremplin | à la couleur de l'étage où il envoie ; propulse vers une plateforme voisine, vers le haut comme vers le bas : chaque plateforme en a un vers chacune de ses voisines, et la place centrale un de plus vers chaque plateforme de l'étage |
 | Façade de maison à liseré rose | abri : arrête les joueurs et renvoie les disques ; trop haute pour sauter par-dessus, seul un disque lancé de l'étage du dessus passe au-dessus |
 | Molette | recule la vue derrière soi, à la 3e personne, jusqu'à voir la moitié de l'arène ; à fond vers l'avant, on revient dans ses yeux |
 | T | narguer : la girafe sautille, se dandine et fait tourner sa tête, sur un « nananère » |
@@ -56,10 +56,11 @@ Tué par un autre joueur, on revoit sa mort par ses yeux (« Killcam »).
 Le sang reste au sol, et là où il fait une flaque, on glisse comme sur la Patinoire.
 Sur l'écran, chaque autre joueur a son alias à sa couleur (👑 devant celui du leader), de taille fixe, avec une flèche sur sa tête, visible même derrière un mur ;
 hors de l'écran ou derrière soi, l'alias se colle au bord, la flèche tournée vers lui.
-Pour jouer sans le son, ce qui t'arrive s'affiche sur une carte en bas de l'écran, 3 s, avec son effet : un bonus ou un malus ramassé (ou la patate chaude reçue), une jambe perdue, le bouclier usé, la fin d'un bonus, et « Pris en cible » quand un disque têtu te suit, avec le nom de son lanceur.
+Pour jouer sans le son, ce qui t'arrive s'affiche sur une carte en bas de l'écran, 3 s, avec son effet : un bonus ou un malus ramassé (ou la patate chaude reçue), une jambe perdue, le bouclier usé, la fin d'un bonus, « Pris en cible » quand un disque têtu te suit, avec le nom de son lanceur, et qui tu viens d'éjecter ; jusqu'à 3 cartes à la fois, empilées.
+Au premier échauffement, 4 cartes, une toutes les 6 s, présentent le clic gauche, le clic droit, les tremplins et la boutique.
 
 L'arène fait 1,5 fois la taille d'origine. Des bacs font la navette entre les plateformes du sol, et des champignons décorent l'arène (on passe au travers, comme les arbres).
-Sur la place centrale, quatre tunnels en croix : à l'intérieur, on disparaît du radar des autres et le toit, transparent pour qui est dessous, arrête les disques venus d'en haut.
+Sur la place centrale, quatre tunnels en croix : à l'intérieur, on disparaît du radar et de l'écran des autres (les bots y passent quand personne n'est à leur étage) et le toit, transparent pour qui est dessous, arrête les disques venus d'en haut.
 Chaque victime allonge le cou du tueur d'un cran (4 au plus, « Cou de girafe ! ») : sa vue monte en douceur avec, mais sa tête dépasse, au point d'être décapitée d'un disque lancé à plat de l'étage du dessus.
 Toutes les 2 min, « La lave monte ! » : une carte au milieu de l'écran compte les secondes (25 environ) avant qu'elle recouvre le rez-de-chaussée,
 et les tremplins du sol qui montent, les sorties de secours, clignotent (la place centrale a les siens, un vers chaque plateforme de l'étage) ;
@@ -69,7 +70,7 @@ Deux disques qui se croisent se parent (« Parade ! ») et repartent chacun chez
 💣 La patate chaude (15 s) : la toucher à quelqu'un d'un disque la lui refile ; qui la garde jusqu'au bout explose (« Boum ! »), et le frag va à qui la lui a refilée.
 Quand le public hue le premier, il le bombarde aussi de tomates (si c'est toi, ton écran se tache de rouge).
 Mort, on revient 2,5 s plus tard.
-Une musique de fond, synthétisée dans le navigateur, tourne pendant le jeu.
+Une musique de fond, synthétisée dans le navigateur, tourne pendant le jeu : un morceau de 68 s en 4 parties (deux suites d'accords, un passage sans grosse caisse, une mélodie par-dessus).
 
 Un disque qui touche le long cou (ou la tête) décapite, même un disque simple : vise bien, le cou est plus fin que le corps.
 Les joueurs sont des girafes : deux longues jambes, faciles à viser, sous un corps à l'horizontale et un long cou. Un disque simple qui touche bas, dans les jambes (vise vers le bas, ou touche un joueur en plein saut),
@@ -81,10 +82,11 @@ Une partie se joue en chacun pour soi : une décapitation vaut 5 frags, éjecter
 (tomber tout seul en partie coûte 1 frag, et seul ce suicide vaut un « Humiliation ! » ; la lave qui monte, une plateforme qui disparaît ou la patate chaude ne coûtent rien). Chaque frag rapporte un disque d'or 📀 : le premier à 20 📀 en poche gagne. En haut à droite, une carte par joueur, le leader en haut, avec la tête de son perso et une jauge qui se remplit jusqu'à 20, les 📀 en petit à côté.
 Ces 📀 se dépensent, aux touches 1 à 5, à embêter les autres, au prix de s'éloigner de la victoire : 🦵 Croche-patte (5, une jambe en moins à tous), 🦒 Grand cou (2, le cou au maximum pour tous),
 💣 Patate (3, la patate chaude au meilleur des autres), 🍅 Tomates (3, la foule l'aveugle 5 s), 🙃 Commandes inversées (5, 8 s, pour les joueurs ; les bots, qui ne lisent pas le clavier, y échappent).
-La boutique, en bas à gauche, grise ce qu'on ne peut pas s'offrir ; elle ouvre 30 s après « Fraggez ! », puis ferme 20 s après chaque achat, pour toute l'arène. Chaque achat s'affiche en carte au milieu de l'écran, sans être lu ; les bots n'achètent rien.
-Avant chaque partie, l'échauffement : on joue sans marquer, puis l'hôte clique « Au combat ! » : tout le monde reste figé le temps que la commentatrice présente le tournoi (11 s, sous-titrée), puis après « 3, 2, 1, Fraggez ! » on bouge et les frags comptent ; l'arène se calme pour l'occasion : pas de plateforme qui disparaît ni d'averse les 30 premières secondes, et la lave attend 2 min
+La boutique, en bas à gauche, grise ce qu'on ne peut pas s'offrir ; elle ouvre 30 s après « Fraggez ! », puis ferme 20 s après chaque achat, pour toute l'arène. Chaque achat s'affiche en carte au milieu de l'écran, sans être lu ; un bot à 6 📀 du premier lui offre de temps en temps la Patate ou les Tomates.
+Un match sur 4 est une manche Mastodonte : tout le monde est énorme jusqu'à la fin.
+Avant chaque partie, l'échauffement : on joue sans marquer, puis l'hôte clique « Au combat ! » : tout le monde reste figé le temps que la commentatrice présente le tournoi (4 s, sous-titrée), puis après « 3, 2, 1, Fraggez ! » on bouge et les frags comptent ; l'arène se calme pour l'occasion : pas de plateforme qui disparaît ni d'averse les 30 premières secondes, et la lave attend 2 min
 (Échap pour l'afficher). À la victoire, le jeu s'arrête sur le résumé du match : le portrait du vainqueur, le classement (frags, victimes, têtes, jambes coupées, morts,
-meilleure série) et les faits marquants, chacun avec le portrait de son joueur (premier sang, coupeur de têtes, bûcheron, souffre-douleur, kamikaze…), avec en fond, au ralenti, l'action du match (la mort la plus spectaculaire, rejouée en boucle, la caméra tournant autour de la victime), qui reste affiché jusqu'à un clic, qui ramène dans la room (le jeu, lui, repasse à l'échauffement 15 s plus tard).
+meilleure série, et 🏆 les matchs gagnés depuis l'ouverture de la room, aussi dans les scores) et les faits marquants, chacun avec le portrait de son joueur (premier sang, coupeur de têtes, bûcheron, souffre-douleur, kamikaze…), avec en fond, en image fixe, l'action du match (la mort la plus spectaculaire, figée un instant après le coup), qui reste affiché jusqu'à un clic, tout le jeu figé : le clic de l'hôte ramène tout le monde dans la room, à l'échauffement.
 Autour de l'arène, des gradins pleins de spectateurs, qui sautent à chaque mort, et applaudissent et crient à chaque décapitation
 (une vraie foule enregistrée dans `sounds/`, coupée avec le reste par M).
 Chaque disque lancé siffle (le décapiteur plus grave, avec le tintement d'une lame), une décapitation ou une jambe coupée fait un bruit mouillé et gargouillant,

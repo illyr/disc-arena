@@ -101,8 +101,7 @@ export const FALL_LINES = [
 // What the commentator says as a match starts, and as it ends: by the winner's lead over the second, {V}, then
 // a word for the last, {L}, when there is a third player.
 export const START_LINES = [
-  "[excited] Bonsoir à toutes et à tous, et bienvenue dans l'arène ! La lave est chaude, les girafes sont prêtes, le public est debout… Que le massacre commence !",
-  "[excited] Mesdames et messieurs, ça y est, on y est ! Le grand match de Disc Arena commence… Disques en main… et que le meilleur gagne !",
+  "[excited] Mesdames et messieurs, disques en main… et que le meilleur gagne !", // cut from a longer take: short, the match starts sooner
 ];
 export const END_LINES = {
   close: "[excited] C'est fini ! C'est fini ! {K} l'emporte d'un cheveu ! {V} y était presque… Quel match, mais quel match !", // 2 frags or less

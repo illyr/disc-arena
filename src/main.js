@@ -26,10 +26,9 @@ const REGICIDE_BONUS = 2; // for bringing down the crowned leader
 const MAX_TRICK_BONUS = 3; // a kill after n rebounds scores n more, up to this
 const WIN_SCORE = 20;
 const COUNTDOWN = 4; // s of « 3, 2, 1, Fraggez ! » before the first frag that counts
-const INTRO = 11; // s: her longest START_LINES line, measured, before the count; all stand still until « Fraggez ! »
+const INTRO = 4; // s: her longest START_LINES line, measured, before the count; all stand still until « Fraggez ! »
 const MATCH_POINT = WIN_SCORE - 2; // from it, the announcer, the crowd and the radar make much of the player
 const RAPID_MAX = 8; // discs in the air at once, in a burst
-const MATCH_PAUSE = 15; // seconds the game stays frozen behind the summary before the warm-up
 const RESPAWN_DELAY = 2.5; // short: a death must not stop the game
 const MAX_NECKS = 4; // victims in a row that each lengthen the neck by NECK_GROWTH
 const BLAME_WINDOW = 6; // seconds a push still counts as the kill of whoever threw it
@@ -210,7 +209,8 @@ for (const m of BUMPERS) {
   platformParts[PLATFORMS.indexOf(m.on)].push(mushroom);
 }
 const pads = PADS.map((p) => {
-  const pad = new THREE.Mesh(new THREE.CylinderGeometry(PAD_RADIUS, PAD_RADIUS, 0.08, 32), glow(0x76ff03));
+  // In the colour of the floor it throws to: on a tower, two pads close by still read apart.
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(PAD_RADIUS, PAD_RADIUS, 0.08, 32), glow(FLOOR_COLORS[Math.round(PLATFORMS[p.to].y / LEVEL)]));
   pad.position.set(p.x, p.y + 0.04, p.z);
   scene.add(pad);
   platformParts[PLATFORMS.indexOf(platformUnder(p))].push(pad);
@@ -538,7 +538,7 @@ const BOTS = joining ? 0 : Math.min(Number(params.get("bots")) || 0, NAMES.lengt
 const NO_STATS = { kills: 0, cuts: 0, deaths: 0, falls: 0, best: 0, spent: 0 };
 const entities = NAMES.map((name, i) => ({
   name, alias: name, color: COLORS[i], bot: i > 0 && i <= BOTS, empty: !!joining || i > BOTS,
-  score: 0, streak: 0, heads: 0, ...NO_STATS, legs: LEGS, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, until: {}, ...makeAvatar(LOOKS[i]),
+  score: 0, streak: 0, heads: 0, wins: 0, ...NO_STATS, legs: LEGS, life: -1, knocks: 0, knockDir: { x: 0, z: 0 }, until: {}, ...makeAvatar(LOOKS[i]),
 }));
 entities.forEach((e) => (e.group.visible = !e.empty));
 
@@ -576,8 +576,9 @@ const cleanName = (name) => (typeof name === "string" ? name.trim().slice(0, NAM
 if (!joining) Object.assign(me, pickPseudo());
 let inMatch = false; // false: the lobby, where the players warm up and score nothing until the host launches
 let winner = null; // the host's winner of the match, until the lobby
+const MAMMOTH_ODDS = 0.25; // of a Mastodon match: everyone fat to the end
+let mammoth = false;
 let firstBlood = false; // who spilled it in this match
-let nextMatchAt = 0;
 let champion = null; // the winner shown, until the lobby
 let report = null; // the host's summary of the match over, sent to the guests
 let fightAt = 0; // the host's end of the countdown: no kill counts before
@@ -600,7 +601,7 @@ function spawn(e) {
   const pl = (free.length ? free : low)[Math.floor(Math.random() * (free.length || low.length))];
   Object.assign(e, {
     body: newBody(pl), alive: true, life: e.life + 1, legs: LEGS, necks: 0, discs: MAX_DISCS, yaw: Math.atan2(pl.x, pl.z), pitch: 0,
-    lastHitBy: null, lastHitAt: 0, until: {}, lastTricks: 0, ai: { throwAt: now + 1 + Math.random(), shotAt: 0, turnAt: 0, strafe: 0 },
+    lastHitBy: null, lastHitAt: 0, until: mammoth ? { fat: now + 3600 } : {}, lastTricks: 0, ai: { throwAt: now + 1 + Math.random(), shotAt: 0, turnAt: 0, strafe: 0 },
   });
   resetAvatar(e);
 }
@@ -818,7 +819,7 @@ function discBack(e) {
 function give(e, power) {
   if (power === "giant") e.discs = Math.min(e.discs + GIANT_DISCS - MAX_DISCS, GIANT_DISCS);
   if (power === "potato") e.potatoFrom = null; // picked up: it blows up nobody's frag
-  e.until[power] = now + POWERS[power].time;
+  e.until[power] = Math.max(e.until[power] ?? 0, now + POWERS[power].time); // a Mastodon match's fat lasts
   const { took, shout = "" } = POWERS[power];
   tell(took, { "{K}": e }, shout, !!shout);
 }
@@ -999,7 +1000,7 @@ function showTags() {
       e.tagEl.append(document.createElement("b"), Object.assign(document.createElement("i"), { textContent: "➜" }));
       $("tags").append(e.tagEl);
     }
-    const on = !e.empty && e.alive && e !== me && me.alive;
+    const on = !e.empty && e.alive && e !== me && me.alive && !(e.body && tunnelAt(e.body.pos)); // in a tunnel: hidden, as on the radar
     e.tagEl.hidden = !on;
     if (!on) continue;
     e.tagEl.firstChild.textContent = `${e === top ? "👑 " : ""}${e.alias}`;
@@ -1070,22 +1071,23 @@ function kill(e, killer, how, dir, { rebounds = 0, strike = false, boom = false 
     firstBlood ||= scores && killer;
     if (how === "decap") shouts.push(scores && ++killer.heads === 3 ? "Chasseur de têtes !" : "En pleine tête !");
     if (strike) shouts.push("Brochette !");
-    if (trick) shouts.push(`Par la bande !${scores ? ` +${trick}` : ""}`);
-    if (bonus) shouts.push(STREAK_SHOUTS[Math.min(killer.streak, STREAK_SHOUTS.length - 1)] + (scores ? ` +${bonus}` : ""));
-    if (regicide) shouts.push(`Détrôné !${scores ? ` +${REGICIDE_BONUS}` : ""}`);
+    if (trick) shouts.push(`Par la bande !${scores ? ` +${trick} 📀` : ""}`);
+    if (bonus) shouts.push(STREAK_SHOUTS[Math.min(killer.streak, STREAK_SHOUTS.length - 1)] + (scores ? ` +${bonus} 📀` : ""));
+    if (regicide) shouts.push(`Détrôné !${scores ? ` +${REGICIDE_BONUS} 📀` : ""}`);
     if (outsider) shouts.push("Remontada !");
     if (killer.necks < MAX_NECKS && ++killer.necks === MAX_NECKS) shouts.push("Cou de girafe !");
     if (killer.bot && Math.random() < 0.4) setTimeout(() => taunt(killer), 800);
   } else if (how === "fall") { // a fall nobody caused: a suicide, the only humiliation; the lava, a platform, a potato are no one's fault
     if (counts) Object.assign(e, { score: e.score - 1, falls: e.falls + 1 });
-    shouts.push(`Humiliation !${counts ? " -1" : ""}`);
+    shouts.push(`Humiliation !${counts ? " -1 📀" : ""}`);
   }
   const boo = !!killer && killer === leader(); // the crowd boos the leader's kills
   Object.assign(e, { how, killer, boo, dir: { x: dir?.x ?? 0, z: dir?.z ?? 0 }, shout: shouts.join(" ") });
   showDeath(e, killer, how, e.dir, e.shout, boo);
   if (scores && killer.score >= WIN_SCORE) {
     winner = killer;
-    nextMatchAt = now + MATCH_PAUSE;
+    killer.wins++;
+    renderScores(); // its 🏆: the death's own render came before
     report = summarize();
     showWinner(winner, report);
   } else if (scores && killer.score >= MATCH_POINT && !killer.matchPoint) {
@@ -1107,13 +1109,17 @@ function launchMatch() {
   lavaAt = fightAt + LAVA_EVERY;
   raining = false;
   rainAt = fightAt + CALM;
+  mammoth = Math.random() < MAMMOTH_ODDS;
   for (const e of entities) if (!e.empty) spawn(Object.assign(e, { score: 0, streak: 0, heads: 0, ...NO_STATS, matchPoint: false }));
   firstBlood = false;
   setMatch(true);
+  if (mammoth) tell("Manche Mastodonte : tout le monde est énorme jusqu'à la fin !");
 }
 
 function toLobby() {
   winner = null;
+  mammoth = false;
+  for (const e of entities) delete e.until.fat;
   showWinner(null);
   setMatch(false);
 }
@@ -1157,7 +1163,7 @@ function summarize() {
     return top[stat] >= min && fact(label, top, `${top[stat]} ${top[stat] > 1 ? many : one}`);
   };
   return {
-    rows: players.map((e) => [entities.indexOf(e), e.score, e.kills, e.heads, e.cuts, e.deaths, e.best]),
+    rows: players.map((e) => [entities.indexOf(e), e.score, e.kills, e.heads, e.cuts, e.deaths, e.best, e.wins]),
     facts: [
       firstBlood && fact("Premier sang", firstBlood),
       !winner.deaths && fact("Sans une égratignure", winner, "jamais mort"),
@@ -1174,7 +1180,7 @@ function summarize() {
 function showWinner(e, summary) {
   champion = e;
   banner("");
-  if (!e) return; // the summary stays until clicked, and leads back to the room
+  if (!e) return void ($("summary").hidden = true); // back in the room: the guests' summary goes with the host's
   $("summary").hidden = false;
   play(false); // the cursor, to click it
   document.exitPointerLock?.();
@@ -1188,7 +1194,7 @@ function showWinner(e, summary) {
   $("summary-winner").textContent = `${e.alias} remporte le match`;
   const cells = (tag, texts) => texts.map((text) => Object.assign(document.createElement(tag), { textContent: text }));
   const head = document.createElement("tr");
-  head.append(...cells("th", ["", "Frags", "Victimes", "Têtes", "Jambes", "Morts", "Série"]));
+  head.append(...cells("th", ["", "Frags", "Victimes", "Têtes", "Jambes", "Morts", "Série", "🏆"]));
   $("summary-table").replaceChildren(head, ...(summary?.rows ?? []).map(([slot, ...stats], rank) => {
     const o = entities[slot], line = document.createElement("tr");
     line.append(...cells("td", [`${rank + 1}. ${o.alias}${o === me ? " (toi)" : ""}`, ...stats]));
@@ -1221,6 +1227,7 @@ function showDeath(e, killer, how, dir, shout, boo) {
   // Picked from the death count, so that every player reads the same line.
   feed(lines[(e.life + entities.indexOf(e)) % lines.length], { "{K}": killer, "{V}": e }, shout);
   if (shout) splash(killer ?? e, shout); // the exploit's author, or the one humiliated
+  else if (killer === me && e !== me) say(`☠️ Tu as éjecté ${e.alias}`, "Dans la lave !"); // a plain push: my card only
   if (e === me) {
     me.group.visible = true;
     banner(boom ? "Boum !" : how === "decap" ? `Raccourci par ${killer.alias}` : killer ? `Sorti par ${killer.alias}`
@@ -1436,6 +1443,8 @@ function think(e) {
       shoot(e);
     }
   }
+  // 6 📀 behind the leader, now and then, the potato or the tomatoes for it: the shop works against the bots too.
+  if (e.score + 6 <= (leader()?.score ?? 0) && Math.random() < 0.003) buy(e, Math.random() < 0.5 ? 2 : 3);
   if (now > ai.turnAt) {
     ai.turnAt = now + 0.5 + Math.random() * 1.2;
     ai.strafe = [-1, 0, 1][Math.floor(Math.random() * 3)];
@@ -1455,6 +1464,15 @@ function think(e) {
   } else if (pl && (Math.hypot(b.pos.x - pl.x, b.pos.z - pl.z) > pl.r - (b.slippery || pl.ferry ? 3.5 : 1.3) || !lands(b.vel, 0.3))) { // sliding, or on a ferry moving off: further from the edge
     const len = Math.hypot(pl.x - b.pos.x, pl.z - b.pos.z);
     wish = { x: (pl.x - b.pos.x) / len, z: (pl.z - b.pos.z) / len };
+  } else if (!target && pl === PLATFORMS[0]) { // nobody on its floor: a stroll through a tunnel, from its nearer end
+    if (!ai.walk?.length) {
+      const t = TUNNELS[Math.floor(Math.random() * TUNNELS.length)];
+      const end = (k) => ({ x: t.x + k * t.ax * (t.half + 1), z: t.z + k * t.az * (t.half + 1) });
+      ai.walk = [end(1), end(-1)].sort((p, q) => apart(p, b.pos) - apart(q, b.pos));
+    }
+    const len = apart(ai.walk[0], b.pos);
+    if (len < 1) ai.walk.shift();
+    else wish = { x: (ai.walk[0].x - b.pos.x) / len, z: (ai.walk[0].z - b.pos.z) / len };
   }
   const c = chest(b);
   const danger = discs.some((d) => d.owner !== e && !d.returning
@@ -1485,7 +1503,17 @@ function lock() {
   Promise.resolve(renderer.domElement.requestPointerLock())
     .catch((err) => feed(`Souris non capturée : ${err?.message ?? err}`));
 }
+// The first warm-up, a card at a time: what a new player would otherwise find out alone.
+const TIPS = [
+  ["🖱️ Clic gauche : un disque", "Il pousse : envoie les autres dans la lave"],
+  ["🖱️ Clic droit : le décapiteur", "Tes 3 disques d'un coup : vise le cou, ou les jambes"],
+  ["⭕ Les tremplins", "À la couleur de l'étage où ils t'envoient"],
+  ["📀 La boutique, touches 1 à 5", "Chaque frag rapporte un disque d'or, à dépenser contre les autres"],
+];
+let tutored = false;
 startScreen.addEventListener("click", () => {
+  if (!tutored) TIPS.forEach((tip, i) => setTimeout(() => !inMatch && say(...tip), 3000 + i * 6000));
+  tutored = true;
   wantMusic = true;
   startMusic();
   play(true);
@@ -1537,7 +1565,10 @@ addEventListener("keydown", (ev) => {
 });
 $("launch").addEventListener("click", launchMatch); // the click goes on to the start screen, which starts playing
 $("lobby").addEventListener("click", (ev) => ev.stopPropagation()); // renaming must not start playing
-$("summary").addEventListener("click", () => ($("summary").hidden = true));
+$("summary").addEventListener("click", () => {
+  $("summary").hidden = true;
+  if (winner) toLobby(); // the host's click brings everyone back to the warm-up
+});
 // A guest's name goes to the host with its moves; the host's states bring it back to everyone.
 let myName = null;
 $("pseudo").addEventListener("input", (ev) => {
@@ -1646,7 +1677,7 @@ let waiting = null; // the line said next, one at most: the match goes on
 // text: the line, its players {K}, {V}…; shout: the exploits as shown ("Doublé ! +1 Détrôné ! +2"), their points
 // not said, the cries after the line.
 function announce(text, shout = "", players = {}) {
-  const cries = shout.match(/[^!+\d ][^!]*!/g) ?? [];
+  const cries = shout.match(/[^!+\d 📀][^!]*!/gu) ?? [];
   if (text && !cries.length) cries.push(RETORTS[Math.floor(Math.random() * RETORTS.length)]); // the announcer answers her, a warrior's word
   if (muted) return;
   if (!text) return cry(cries);
@@ -1730,10 +1761,21 @@ function audio() {
   return crowd;
 }
 
-// The music: a dark synthwave loop made up on the spot, low under the rest: a kick, a snare, hats, a bass,
-// an arpeggio over A minor, F, C, G. It starts at the first click; M cuts it with the rest.
+// The music: a dark synthwave song made up on the spot, low under the rest: a kick, a snare, hats, a bass,
+// an arpeggio, and a tune on top in some parts. It starts at the first click; M cuts it with the rest.
 const BEAT = 60 / 112; // s
-const CHORDS = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // MIDI notes, 2 bars each
+const PROGRESSIONS = [
+  [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]], // A minor, F, C, G: MIDI notes, 2 bars each
+  [[50, 53, 57], [53, 57, 60], [57, 60, 64], [52, 56, 59]], // D minor, F, A minor, E
+];
+// 8 bars a part, 17 s; the four, 68 s, before the song starts over. drums: 2 all, 1 half-time, 0 the hats only.
+const PARTS = [
+  { chords: 0, drums: 2, arp: [0, 1, 2] },
+  { chords: 1, drums: 1, arp: [0, 2, 1, 2], lead: true },
+  { chords: 0, drums: 0, arp: [2, 1, 0], lead: true }, // the break, the arpeggio going down
+  { chords: 1, drums: 2, arp: [0, 1, 2, 1], lead: true },
+];
+const LEAD = [0, -1, 2, 1, 2, -1, 1, 0]; // the tune: a chord tone each beat over its 2 bars, -1 a rest
 const hz = (note) => 440 * 2 ** ((note - 69) / 12);
 function startMusic() {
   if (music || muted || !wantMusic || !window.AudioContext) return;
@@ -1754,14 +1796,17 @@ function startMusic() {
   }, 100);
 }
 function sixteenth(n, t) {
-  const chord = CHORDS[Math.floor(n / 32) % CHORDS.length], step = n % 16;
+  const part = PARTS[Math.floor(n / 128) % PARTS.length], chord = PROGRESSIONS[part.chords][Math.floor(n / 32) % 4], step = n % 16;
   const s = { ctx: crowd, t, out: music.out }, bass = { ...s, out: music.low };
-  if (step % 4 === 0) tone(s, "sine", 150, 40, 0.3, 0.9); // kick
-  if (step === 4 || step === 12) noise(s, "bandpass", 1800, 900, 0.18, 0.5, 0.005, 0.8); // snare
+  const fill = n % 128 >= 124; // the last beat of a part: a snare roll into the next
+  if (part.drums === 2 ? step % 4 === 0 : part.drums === 1 && (step === 0 || step === 10)) tone(s, "sine", 150, 40, 0.3, 0.9); // kick
+  if (fill || (part.drums === 2 ? step === 4 || step === 12 : part.drums === 1 && step === 8)) noise(s, "bandpass", 1800, 900, 0.18, 0.5, 0.005, 0.8); // snare
   if (step % 4 === 2) noise(s, "highpass", 8000, 7000, 0.05, 0.15); // hat
-  if (step % 2 === 0) tone(bass, "sawtooth", hz(chord[0] - 24), hz(chord[0] - 24.2), BEAT / 2, 0.5); // bass, on the eighths
-  const note = hz(chord[step % 3] + 12 * (1 + (step >> 3)));
+  if (step % (part.drums ? 2 : 8) === 0) tone(bass, "sawtooth", hz(chord[0] - 24), hz(chord[0] - 24.2), part.drums ? BEAT / 2 : BEAT * 2, 0.5); // bass, on the eighths, held in the break
+  const note = hz(chord[part.arp[step % part.arp.length]] + 12 * (1 + (step >> 3)));
   tone(s, "square", note, note * 0.99, BEAT / 4, 0.05); // arpeggio, an octave up on the second half
+  const tune = LEAD[Math.floor(n / 4) % 8];
+  if (part.lead && step % 4 === 0 && tune >= 0) tone(s, "triangle", hz(chord[tune] + 24), hz(chord[tune] + 24), BEAT * 0.9, 0.12); // the tune
 }
 // Noise through a filter, its gain rising in attack s then dying out by end s.
 function noise({ ctx, t, out }, type, from, to, end, peak, attack = 0.01, q = 1, at = 0) {
@@ -1934,8 +1979,16 @@ function splash(who, shout) {
 // What happens to me, on a card of its own, lower, with what it does: the game understood without the sound.
 const LEG_HELP = ["Plus de jambes : tu rampes, sans sauter", "À cloche-pied : tu avances par petits bonds, moins vite"];
 function say(title, help) {
-  document.querySelector(".splash.mine")?.remove();
+  // Stacked, three at most: the first free slot, else the oldest card's.
+  const shown = [...document.querySelectorAll(".splash.mine")], used = shown.map((c) => +c.dataset.slot);
+  let slot = [0, 1, 2].find((s) => !used.includes(s));
+  if (slot === undefined) {
+    slot = used[0];
+    shown[0].remove();
+  }
   const card = Object.assign(document.createElement("div"), { className: "splash mine" });
+  card.dataset.slot = slot;
+  card.style.bottom = `calc(18% + ${slot * 110}px)`;
   card.style.setProperty("--color", css(me.color));
   card.append(Object.assign(document.createElement("div"), { textContent: title }), Object.assign(document.createElement("span"), { textContent: help }));
   document.body.append(card);
@@ -1947,7 +2000,7 @@ function watchMe() {
   const state = { alive: me.alive, legs: me.legs, powers: Object.keys(POWERS).filter((p) => has(me, p)),
     left: Object.fromEntries(Object.entries(me.until).map(([p, t]) => [p, t - now])), hunter: joining ? hunter : discs.find((d) => d.prey === me)?.owner ?? null };
   if (mine?.alive && me.alive) {
-    for (const p of state.powers.filter((p) => !mine.powers.includes(p))) say(`${POWERS[p].icon} ${POWERS[p].label}`, POWERS[p].help);
+    for (const p of state.powers.filter((p) => !mine.powers.includes(p))) say(`${POWERS[p].icon} ${POWERS[p].label}`, state.left[p] > 60 ? "Manche Mastodonte : jusqu'à la fin du match" : POWERS[p].help);
     if (me.legs < mine.legs) say("🦵 Une jambe en moins", LEG_HELP[me.legs]);
     // A power gone: its time up, or before it, the shield taken by a disc, the potato passed on; else a spawn wiped it.
     for (const p of mine.powers.filter((p) => !state.powers.includes(p))) {
@@ -2110,7 +2163,7 @@ function renderScores() {
     gauge.style.background = `linear-gradient(to right, ${css(e.color)} ${full}%, #ffffff26 ${full}%)`;
     name.append(gauge);
     const score = document.createElement("small");
-    score.textContent = `${e.score} 📀`;
+    score.textContent = `${e.score} 📀${e.wins ? ` 🏆${e.wins}` : ""}`; // 🏆: the matches won in this room
     card.append(portrait, name, score);
     $("scores").append(card);
   }
@@ -2142,7 +2195,7 @@ function renderLobby(top) {
     name.className = "pseudo";
     name.textContent = o.name;
     const info = document.createElement("div");
-    info.textContent = [o === entities[0] ? "hôte" : o.bot ? "bot" : "", `${o.score} frags`].filter(Boolean).join(" · ");
+    info.textContent = [o === entities[0] ? "hôte" : o.bot ? "bot" : "", `${o.score} frags`, o.wins && `🏆 ${o.wins} victoire${o.wins > 1 ? "s" : ""}`].filter(Boolean).join(" · ");
     card.append(portrait, alias, name, info);
     return card;
   }));
@@ -2161,7 +2214,7 @@ function hostState() {
   return {
     ents: entities.map((e) => e.empty ? null : {
       name: e.name, alias: e.alias, bot: e.bot, x: e.body.pos.x, y: e.body.pos.y, z: e.body.pos.z, yaw: e.yaw,
-      alive: e.alive, life: e.life, legs: e.legs, necks: e.necks, discs: e.discs, back: +Math.min(discBack(e), 99).toFixed(1), score: e.score, boo: e.boo, // back finite: Infinity does not travel
+      alive: e.alive, life: e.life, legs: e.legs, necks: e.necks, discs: e.discs, back: +Math.min(discBack(e), 99).toFixed(1), score: e.score, wins: e.wins, boo: e.boo, // back finite: Infinity does not travel
       taunt: Math.max(0, (e.tauntUntil ?? 0) - now),
       until: Object.fromEntries(Object.entries(e.until).filter(([, t]) => t > now).map(([p, t]) => [p, t - now])),
       knocks: e.knocks, kx: e.knockDir.x, kz: e.knockDir.z,
@@ -2188,7 +2241,7 @@ function hostState() {
 function guestJoins(conn) {
   const e = entities.find((o) => o.empty);
   if (!e) return conn.close(); // full
-  Object.assign(e, { empty: false, conn, ...pickPseudo(), score: 0, streak: 0, heads: 0, ...NO_STATS, throws: 0, decaps: 0, taunts: 0, buys: 0 });
+  Object.assign(e, { empty: false, conn, ...pickPseudo(), score: 0, streak: 0, heads: 0, wins: 0, ...NO_STATS, throws: 0, decaps: 0, taunts: 0, buys: 0 });
   e.seenAt = performance.now();
   spawn(e);
   feed(`${e.name} a rejoint la partie`);
@@ -2238,7 +2291,7 @@ function guestHears(s) {
       return;
     }
     if (n.taunt > 0 && !(e.tauntUntil > now)) nyaNya(e.body?.pos ?? n);
-    Object.assign(e, { empty: false, name: n.name, alias: n.alias, bot: n.bot, score: n.score, discs: n.discs, back: n.back, necks: n.necks,
+    Object.assign(e, { empty: false, name: n.name, alias: n.alias, bot: n.bot, score: n.score, wins: n.wins, discs: n.discs, back: n.back, necks: n.necks,
       tauntUntil: now + n.taunt,
       until: Object.fromEntries(Object.entries(n.until).map(([p, t]) => [p, now + t])) });
     if (n.life !== e.life) {
@@ -2268,7 +2321,7 @@ function guestHears(s) {
   shopAt = now + s.shopIn;
   const won = entities[s.winner];
   if ((won ?? null) !== champion) showWinner(won ?? null, s.summary);
-  const key = s.ents.map((n) => n && n.name + n.alias + n.score).join();
+  const key = s.ents.map((n) => n && n.name + n.alias + n.score + n.wins).join();
   if (key !== scoresKey) {
     scoresKey = key;
     renderScores();
@@ -2310,8 +2363,7 @@ function showDiscs(list) {
 }
 
 function hostFrame(dt) {
-  if (winner && now > nextMatchAt) toLobby();
-  if (winner) return sendState(dt); // the match is over: all stand still behind the summary
+  if (winner) return sendState(dt); // the match is over: all stand still until the host closes the summary
   moveFerries(now);
   for (const e of entities) {
     if (e.empty) continue;
@@ -2523,7 +2575,7 @@ renderer.setAnimationLoop(() => {
   const back = joining ? me.back : discBack(me);
   $("reload").textContent = me.alive && me.discs < maxDiscs(me) && back < 99 ? `${back.toFixed(1).replace(".", ",")} s` : "";
   $("powers").textContent = !me.alive ? "" : Object.entries(me.until).filter(([, until]) => until > now)
-    .map(([p, until]) => `${POWERS[p].icon} ${POWERS[p].label} ${Math.ceil(until - now)} s`).join(" · ");
+    .map(([p, until]) => `${POWERS[p].icon} ${POWERS[p].label}${until - now > 60 ? "" : ` ${Math.ceil(until - now)} s`}`).join(" · ");
   record();
   if (replay && now > replay.from + REPLAY_AFTER) replay = null;
   $("replay").hidden = !replay;
@@ -2537,9 +2589,9 @@ renderer.setAnimationLoop(() => {
     });
   }
   if (champion && best?.frames && !$("summary").hidden) {
-    const clip = best.frames, start = clip[0].at, span = clip.at(-1).at - start || 1;
-    return playBack(clip.find((f) => f.at >= start + ((now * 0.5) % span)) ?? clip.at(-1), null, (frame) => {
-      const v = frame.ents[entities.indexOf(best.victim)].pos, a = now * 0.3;
+    // A still: the action of the match a split second after the death, the head or the body on its way.
+    return playBack(best.frames.find((f) => f.at >= best.at + 0.3) ?? best.frames.at(-1), null, (frame) => {
+      const v = frame.ents[entities.indexOf(best.victim)].pos, a = 0.6;
       camera.position.set(v.x + Math.sin(a) * 9, v.y + 5, v.z + Math.cos(a) * 9);
       camera.lookAt(v.x, v.y + 2, v.z);
     });
