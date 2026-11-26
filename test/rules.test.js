@@ -2,11 +2,21 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ARENA_RADIUS, CHEST, FAT, LEGS_TOP, DISC_SPEED, HIT_RADIUS, NECK_RADIUS, FALL_DEATH_Y, HEAD_TOP, JUMP_SPEED, LEVEL, NECK_BOTTOM, PADS, PLATFORMS, RUN_SPEED, WALLS, WALL_HEIGHT,
-  FERRY_PERIOD, NECK_GROWTH, PARRY_RADIUS, TUNNELS, TUNNEL_WIDTH, discsMeet, hitZone, knock, moveFerries, newBody, newDisc, platformUnder, segmentHits, steer, stepBody, stepDisc, tunnelAt,
+  FERRY_PERIOD, NECK_GROWTH, PARRY_RADIUS, TUNNELS, TUNNEL_WIDTH, discsMeet, hitZone, knock, moveFerries, newBody, newDisc, platformUnder, segmentHits, steer, stepBody, stepDisc, tunnelAt, resize,
 } from "../src/rules.js";
 
 const DT = 1 / 60;
 const STILL = { x: 0, z: 0 };
+// The map shrinks for fewer players (resize): its checks hold at the smallest size too.
+const SIZES = [1, 0.6];
+const atSize = (k, name, fn) => test(`${name}, map at ${k}`, () => {
+  resize(k);
+  try {
+    fn();
+  } finally {
+    resize(1);
+  }
+});
 
 test("a disc bounces on the arena wall and keeps its speed", () => {
   const d = newDisc(null, { x: ARENA_RADIUS - 6, y: 0, z: 0 }, { x: 1, z: 0 }, false); // over the lava, nothing in the way
@@ -17,7 +27,7 @@ test("a disc bounces on the arena wall and keeps its speed", () => {
   assert.ok(Math.abs(Math.hypot(d.vel.x, d.vel.z) - DISC_SPEED) < 1e-9);
 });
 
-test("every pad throws the player onto its target platform, over no wall", () => {
+for (const k of SIZES) atSize(k, "every pad throws the player onto its target platform, over no wall", () => {
   for (const pad of PADS) {
     const b = newBody(pad);
     for (let i = 0; i < 240; i++) stepBody(b, STILL, false, DT);
@@ -48,7 +58,7 @@ test("a pad to a gone platform throws no one, and a push in flight does not stop
   assert.equal(b.vel.y, climb);
 });
 
-test("every wall stands on a platform, off its center", () => {
+for (const k of SIZES) atSize(k, "every wall stands on a platform, off its center", () => {
   for (const w of WALLS) {
     for (const end of [-1, 1]) assert.ok(platformUnder({ x: w.x + w.ax * w.half * end, z: w.z + w.az * w.half * end }));
     for (const pl of PLATFORMS) assert.ok(Math.hypot(w.x - pl.x, w.z - pl.z) > 1.5);
@@ -168,7 +178,7 @@ test("a disc's move hits a chest it passes through, not one beside it", () => {
   assert.ok(!segmentHits(a, b, { x: 0.5, y: 1.2, z: 1 }, 0.6));
 });
 
-test("no platform stands above another, and the pads reach them all from the center", () => {
+for (const k of SIZES) atSize(k, "no platform stands above another, and the pads reach them all from the center", () => {
   const still = PLATFORMS.filter((pl) => !pl.ferry);
   for (const a of still) for (const b of still) {
     if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > a.r + b.r + 1, "a gap between any two");
@@ -181,10 +191,11 @@ test("no platform stands above another, and the pads reach them all from the cen
   assert.equal(reached.size, still.length);
 });
 
-test("a ferry carries a player from one platform of the ring to the next, over no other", () => {
-  const ferry = PLATFORMS.find((pl) => pl.ferry), b = newBody(ferry);
+for (const k of SIZES) atSize(k, "a ferry carries a player from one platform of the ring to the next, over no other", () => {
+  const ferry = PLATFORMS.find((pl) => pl.ferry);
   const touches = (pl) => PLATFORMS.filter((o) => o !== pl && Math.hypot(o.x - pl.x, o.z - pl.z) < o.r + pl.r);
   moveFerries(0);
+  const b = newBody(ferry);
   const start = touches(ferry);
   for (let t = 0; t <= FERRY_PERIOD / 2; t += DT) {
     moveFerries(t);

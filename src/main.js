@@ -2,7 +2,7 @@ import * as THREE from "three";
 import {
   ARENA_RADIUS, BOOST_TIME, BUMPERS, CHEST, DISC_LIFE, DISC_RADIUS, DISC_SPEED, FAT, FAT_TIME, GIANT_DISCS, FALL_DEATH_Y, GRAVITY, JUMP_SPEED, LEVEL, MAX_DISCS, PADS, PAD_RADIUS, PLATFORMS,
   WALLS, WALL_HEIGHT, WALL_THICKNESS, TUNNELS, TUNNEL_WIDTH, tunnelAt,
-  LEGS, LEGS_TOP, NECK_GROWTH, RUN_SPEED, chest, discsMeet, hitZone, thickness, knock, moveFerries, newBody, newDisc, platformUnder, steer, stepBody, stepDisc,
+  LEGS, LEGS_TOP, NECK_GROWTH, RUN_SPEED, chest, discsMeet, hitZone, thickness, knock, moveFerries, newBody, newDisc, platformUnder, resize, steer, stepBody, stepDisc,
 } from "./rules.js";
 import { hostRoom, joinRoom, newRoomCode } from "./net.js";
 import { ASIDES, crySlug, DECAP_LINES, END_LINES, FALL_LINES, NAMES, PSEUDOS, PUSH_LINES, RETORTS, START_LINES, STREAK_SHOUTS, untoned, voiceSlug } from "./pseudos.js";
@@ -874,6 +874,26 @@ let itemAt = 5;
 let shownItems = []; // [power, x, y, z]: the host's items, or what it says of them
 const itemMeshes = [];
 
+// The map shrinks for fewer players, so that they meet: full size from ARENA_FULL players, down to 0.6 (resize).
+const ARENA_FULL = 6;
+let arenaSize = 1; // the host's, or what it says of it
+function setSize(k) {
+  if (k === arenaSize) return;
+  arenaSize = k;
+  const moves = resize(k);
+  platformParts.forEach((parts, i) => {
+    if (!PLATFORMS[i].ferry) for (const m of parts) m.position.set(m.position.x + moves[i].dx, m.position.y, m.position.z + moves[i].dz);
+  });
+  for (const o of [...maluses, ...items]) {
+    const m = moves[PLATFORMS.indexOf(o.pl)];
+    o.x += m.dx;
+    o.z += m.dz;
+  }
+  stainMesh.count = stainCount = 0; // the blood stayed where the platforms were
+  pools.clear();
+  stainSquares.length = 0;
+}
+
 // Now and then a platform of the two lower floors blinks for VANISH_WARN s, then is gone for VANISH_TIME s.
 const VANISH_EVERY = 15;
 const VANISH_WARN = 3;
@@ -1110,6 +1130,7 @@ function launchMatch() {
   raining = false;
   rainAt = fightAt + CALM;
   mammoth = Math.random() < MAMMOTH_ODDS;
+  setSize(Math.min(1, Math.max(0.6, Math.sqrt(entities.filter((e) => !e.empty).length / ARENA_FULL))));
   for (const e of entities) if (!e.empty) spawn(Object.assign(e, { score: 0, streak: 0, heads: 0, ...NO_STATS, matchPoint: false }));
   firstBlood = false;
   setMatch(true);
@@ -1581,12 +1602,13 @@ $("pseudo").addEventListener("input", (ev) => {
 
 // KeyboardEvent.code names the key by its place: KeyW is Z on an AZERTY keyboard.
 const axis = (plus, minus) => (keys.has(plus) ? 1 : 0) - (keys.has(minus) ? 1 : 0);
+const SPRINT = 1.5; // Shift held: so many times faster
 function playerInput() {
   const flip = has(me, "upside") ? -1 : 1;
   const ahead = axis("KeyW", "KeyS") * flip, side = axis("KeyD", "KeyA") * flip;
   const f = forward(me.yaw);
   const x = f.x * ahead - f.z * side, z = f.z * ahead + f.x * side;
-  const len = Math.hypot(x, z) || 1;
+  const len = (Math.hypot(x, z) || 1) / (keys.has("ShiftLeft") || keys.has("ShiftRight") ? SPRINT : 1);
   return { wish: { x: x / len, z: z / len }, jump: keys.has("Space") };
 }
 
@@ -2231,6 +2253,7 @@ function hostState() {
     summary: winner && report,
     match: inMatch,
     clock: now, // the ferries' time
+    size: arenaSize,
     lava: lavaY,
     lavaIn,
     rain: raining,
@@ -2313,6 +2336,7 @@ function guestHears(s) {
       showDeath(e, entities[n.killer] ?? null, n.how, { x: n.dx, z: n.dz }, n.shout, n.boo);
     }
   });
+  setSize(s.size);
   if (s.match !== inMatch) setMatch(s.match);
   ferryClock = s.clock;
   lavaY = s.lava;

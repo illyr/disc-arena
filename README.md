@@ -18,6 +18,7 @@ puis ouvrir http://localhost:8000. Three.js vient du CDN jsDelivr : il faut Inte
 | Touche | Action |
 |---|---|
 | ZQSD / WASD | bouger |
+| Maj | courir : 1,5 fois plus vite tant qu'on la tient |
 | Espace | sauter : par-dessus un disque |
 | Clic gauche | disque : pousse la cible, rebondit 3 fois puis revient ; il vole vers ce qui est sous la croix du viseur ; à côté des disques, en bas à gauche, le temps avant le retour du prochain |
 | Clic droit | décapiteur : prend les 3 disques, tue d'un coup, sauf dans les jambes, où il en coupe une |
@@ -59,7 +60,7 @@ hors de l'écran ou derrière soi, l'alias se colle au bord, la flèche tournée
 Pour jouer sans le son, ce qui t'arrive s'affiche sur une carte en bas de l'écran, 3 s, avec son effet : un bonus ou un malus ramassé (ou la patate chaude reçue), une jambe perdue, le bouclier usé, la fin d'un bonus, « Pris en cible » quand un disque têtu te suit, avec le nom de son lanceur, et qui tu viens d'éjecter ; jusqu'à 3 cartes à la fois, empilées.
 Au premier échauffement, 4 cartes, une toutes les 6 s, présentent le clic gauche, le clic droit, les tremplins et la boutique.
 
-L'arène fait 1,5 fois la taille d'origine. Des bacs font la navette entre les plateformes du sol, et des champignons décorent l'arène (on passe au travers, comme les arbres).
+L'arène fait 1,5 fois la taille d'origine, à 6 joueurs et plus ; à chaque partie, avec moins de joueurs, les plateformes se rapprochent du centre (×0,82 à 4, ×0,6 au plus serré, à 2) pour qu'on se croise autant. Des bacs font la navette entre les plateformes du sol, et des champignons décorent l'arène (on passe au travers, comme les arbres).
 Sur la place centrale, quatre tunnels en croix : à l'intérieur, on disparaît du radar et de l'écran des autres (les bots y passent quand personne n'est à leur étage) et le toit, transparent pour qui est dessous, arrête les disques venus d'en haut.
 Chaque victime allonge le cou du tueur d'un cran (4 au plus, « Cou de girafe ! ») : sa vue monte en douceur avec, mais sa tête dépasse, au point d'être décapitée d'un disque lancé à plat de l'étage du dessus.
 Toutes les 2 min, « La lave monte ! » : une carte au milieu de l'écran compte les secondes (25 environ) avant qu'elle recouvre le rez-de-chaussée,

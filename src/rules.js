@@ -62,7 +62,7 @@ export const PLATFORMS = [
 for (let i = 1; i <= 4; i++) {
   const a = PLATFORMS[i], b = PLATFORMS[(i % 4) + 1], d = Math.hypot(b.x - a.x, b.z - a.z);
   const end = (from, to) => ({ x: from.x + ((to.x - from.x) / d) * (a.r + FERRY_RADIUS - 1.5), z: from.z + ((to.z - from.z) / d) * (a.r + FERRY_RADIUS - 1.5) });
-  const ferry = { from: end(a, b), to: end(b, a) };
+  const ferry = { from: end(a, b), to: end(b, a), ends: [a, b] };
   PLATFORMS.push({ ...ferry.from, y: 0, r: FERRY_RADIUS, ferry });
 }
 // Moves the ferries to where they are at time t, each a quarter of a trip after the one before;
@@ -77,7 +77,7 @@ export function moveFerries(t) {
 // A pad sits on its platform's rim, on the side of the platform it throws to.
 const pad = (from, to) => {
   const a = PLATFORMS[from], b = PLATFORMS[to], d = Math.hypot(b.x - a.x, b.z - a.z), k = (a.r - 1.2) / d;
-  return { x: a.x + (b.x - a.x) * k, y: a.y, z: a.z + (b.z - a.z) * k, to };
+  return { x: a.x + (b.x - a.x) * k, y: a.y, z: a.z + (b.z - a.z) * k, to, on: a };
 };
 // Every platform throws to each of its neighbours, and back: the map read at a glance.
 const next = (i) => (i % 4) + 1; // the next of the ring, 1 to 4 round
@@ -153,6 +153,24 @@ function blockBody(b) {
 export const thickness = (pl) => (pl.y ? 0.6 : 1.5); // the upper floors thin: a flat disc flies under them
 export const platformUnder = (p) => PLATFORMS.find((pl) => !pl.gone && Math.hypot(p.x - pl.x, p.z - pl.z) < pl.r);
 for (const w of [...WALLS, ...BUMPERS]) w.on = platformUnder(w);
+
+// The map at full size, for 6 players and more; resize(k) brings every platform k times as near the middle, with what
+// stands on it (pads, walls, mushrooms, the ends of the ferries): the directions between platforms stay, so the pads still aim right.
+const HOMES = PLATFORMS.map((pl) => ({ x: pl.x, z: pl.z }));
+export function resize(k) {
+  const moves = PLATFORMS.map((pl, i) => (pl.ferry ? { dx: 0, dz: 0 } : { dx: HOMES[i].x * k - pl.x, dz: HOMES[i].z * k - pl.z }));
+  const shift = (o, pl) => {
+    const m = moves[PLATFORMS.indexOf(pl)];
+    o.x += m.dx;
+    o.z += m.dz;
+  };
+  for (const o of [...WALLS, ...BUMPERS, ...PADS]) shift(o, o.on);
+  for (const pl of PLATFORMS) {
+    if (pl.ferry) pl.ferry.ends.forEach((end, i) => shift(i ? pl.ferry.to : pl.ferry.from, end));
+    else shift(pl, pl);
+  }
+  return moves; // the ferries' are 0: they go where moveFerries sends them
+}
 
 export const chest = (b) => ({ x: b.pos.x, y: b.pos.y + CHEST, z: b.pos.z });
 
